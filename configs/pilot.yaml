@@ -1,0 +1,41 @@
+# FloodForge AI - pilot configuration. Single source of truth for all modules.
+# Values marked PLACEHOLDER are assumptions the team should refine.
+
+pilot:
+  name: nullah_lai_pilot
+  # PLACEHOLDER bbox (~2.5 km x 3.3 km) around the Nullah Lai corridor, Rawalpindi.
+  # Adjust to the exact subcatchment once you inspect the DEM.
+  bbox_wgs84: {west: 73.040, south: 33.590, east: 73.070, north: 33.620}
+
+grid:
+  crs: "EPSG:32643"      # UTM zone 43N (metres) - Rawalpindi sits at ~73E
+  cell_size_m: 30        # matches Copernicus DEM native resolution
+
+scenario_limits:
+  rainfall_mm_per_hr: {min: 10, max: 150, default: 50}
+  duration_hr:        {min: 0.5, max: 6,  default: 2}
+  budget_pkr:         {min: 5000000, max: 200000000, default: 50000000}
+
+# ESA WorldCover class -> runoff coefficient. PLACEHOLDER screening values.
+runoff_coefficients:
+  10: 0.15   # tree cover
+  20: 0.25   # shrubland
+  30: 0.30   # grassland
+  40: 0.35   # cropland
+  50: 0.85   # built-up
+  60: 0.50   # bare / sparse
+  80: 1.00   # water
+
+# PLACEHOLDER unit costs and effects. Not real procurement prices.
+interventions:
+  storage:           {cost_per_m3_pkr: 15000, unit: m3}
+  permeable_surface: {cost_per_m2_pkr: 4000,  unit: m2, runoff_reduction: 0.40}
+  drainage:          {cost_per_m3hr_pkr: 8000, unit: m3_per_hr}
+
+exposure:
+  # Modeled accumulation above this (mm, screening proxy) counts as "exposed"
+  threshold_mm: 50
+
+paths:
+  raw: data/raw
+  processed: data/processed
