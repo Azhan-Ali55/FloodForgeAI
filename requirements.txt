@@ -1,0 +1,9 @@
+numpy
+pyyaml
+pytest
+# rasterio
+# geopandas
+# pysheds
+# xgboost
+# ortools
+# streamlit
