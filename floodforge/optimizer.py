@@ -228,6 +228,42 @@ def optimize(
                     improved = True
                     break
 
+        # Greedy 1-swap refinement: try swapping 1 chosen intervention for 1 unused candidate
+        swap_improved = True
+        swap_passes = 0
+        while swap_improved and swap_passes < 2 and best_portfolio:
+            swap_improved = False
+            swap_passes += 1
+            for out_idx in range(len(best_portfolio)):
+                out_iv = best_portfolio[out_idx]
+                base_without = best_portfolio[:out_idx] + best_portfolio[out_idx + 1 :]
+                spent_without = spent - out_iv.cost_pkr
+                for cand in candidates:
+                    if cand.id in chosen_ids or spent_without + cand.cost_pkr > budget_pkr:
+                        continue
+                    trial = base_without + [cand]
+                    res = simulate(inputs, rainfall_mm, duration_hr, interventions=trial)
+                    rt = risk_transfer_check(baseline_res, res, zones, tolerance=risk_tolerance)
+                    sc = score_portfolio(
+                        baseline_metrics,
+                        res.metrics,
+                        rt,
+                        weights=weights,
+                        risk_transfer_penalty=risk_transfer_penalty,
+                    )
+                    if sc > best_score + 1e-6:
+                        best_score = sc
+                        best_portfolio = trial
+                        best_res = res
+                        best_rt = rt
+                        chosen_ids.remove(out_iv.id)
+                        chosen_ids.add(cand.id)
+                        spent = spent_without + cand.cost_pkr
+                        swap_improved = True
+                        break
+                if swap_improved:
+                    break
+
     total_cost = float(sum(iv.cost_pkr for iv in best_portfolio))
 
     return OptimizationResult(
@@ -241,3 +277,60 @@ def optimize(
         worst_random_score=worst_random_score,
         total_cost_pkr=total_cost,
     )
+
+
+@dataclass
+class ParetoPoint:
+    """Single budget-vs-exposure point on the Mode B Pareto frontier."""
+
+    budget_pkr: float
+    total_cost_pkr: float
+    best_score: float
+    exposed_area_km2: float
+    population_exposed: float
+    buildings_exposed: int
+    n_interventions: int
+    n_risk_transfer_flags: int
+    result: OptimizationResult
+
+
+def pareto_frontier(
+    inputs: dict,
+    rainfall_mm: float,
+    duration_hr: float,
+    budgets_pkr: list[float],
+    n_iter: int = 400,
+    seed: int = 0,
+    surrogate=None,
+) -> list[ParetoPoint]:
+    """Evaluate stepped PKR budget ceilings to trace the mitigation Pareto frontier."""
+    baseline_res = simulate(inputs, rainfall_mm, duration_hr, interventions=None)
+    candidates = generate_candidates(inputs, baseline_result=baseline_res)
+
+    points: list[ParetoPoint] = []
+    for idx, budget in enumerate(sorted(budgets_pkr)):
+        res = optimize(
+            inputs=inputs,
+            rainfall_mm=rainfall_mm,
+            duration_hr=duration_hr,
+            budget_pkr=float(budget),
+            n_iter=n_iter,
+            seed=seed + idx,
+            candidates=candidates,
+            surrogate=surrogate,
+        )
+        n_flags = sum(1 for r in res.risk_transfer_table if r.get("risk_transfer_flag"))
+        points.append(
+            ParetoPoint(
+                budget_pkr=float(budget),
+                total_cost_pkr=res.total_cost_pkr,
+                best_score=res.best_score,
+                exposed_area_km2=float(res.optimized_metrics["exposed_area_km2"]),
+                population_exposed=float(res.optimized_metrics["population_exposed"]),
+                buildings_exposed=int(res.optimized_metrics["buildings_exposed"]),
+                n_interventions=len(res.best_portfolio),
+                n_risk_transfer_flags=n_flags,
+                result=res,
+            )
+        )
+    return points

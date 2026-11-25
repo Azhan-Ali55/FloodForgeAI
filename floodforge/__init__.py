@@ -7,4 +7,7 @@ __all__ = [
     "optimizer",
     "metrics",
     "surrogate",
+    "weather",
+    "forecast",
+    "alerts",
 ]

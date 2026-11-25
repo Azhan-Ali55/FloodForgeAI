@@ -142,3 +142,69 @@ def test_surrogate_trains_and_prescreens(mock_inputs):
     )
     assert opt_res.total_cost_pkr <= 6_000_000.0
     assert len(opt_res.history) == 60
+
+
+def test_mode_a_forecast_and_alerts(mock_inputs):
+    from floodforge.weather import WeatherPayload
+    from floodforge.forecast import run_forecast_pipeline
+    from floodforge.alerts import assess_alert
+
+    n_past = 72
+    n_fcst = 72
+    precip = np.concatenate([np.full(n_past, 0.5), np.full(n_fcst, 4.0)])
+    prob = np.full(n_past + n_fcst, 75.0)
+    sm = np.full(n_past + n_fcst, 0.30)
+
+    wp = WeatherPayload(
+        timestamps_utc=[f"2026-07-20T{i%24:02d}:00Z" for i in range(n_past + n_fcst)],
+        timestamps_pkt=[f"2026-07-20 {i%24:02d}:00 PKT" for i in range(n_past + n_fcst)],
+        precipitation_mm=precip,
+        precipitation_prob_pct=prob,
+        soil_moisture_0_9cm=sm,
+        past_hours_count=n_past,
+        issued_at_utc="2026-07-20T00:00Z",
+        is_stale=False,
+        staleness_reason=None,
+        interpolated_gaps=0,
+    )
+
+    fcst = run_forecast_pipeline(mock_inputs, wp, cloudburst_mm=150.0, cloudburst_hr=3.0)
+    assert fcst.c_perv_effective >= fcst.c_perv_base
+    assert set(fcst.scenarios.keys()) == {
+        "baseline_forecast",
+        "high_rainfall",
+        "hypothetical_cloudburst",
+    }
+    assert fcst.scenarios["baseline_forecast"].is_hypothetical is False
+    assert fcst.scenarios["hypothetical_cloudburst"].is_hypothetical is True
+    assert (
+        fcst.simulations["hypothetical_cloudburst"].metrics["exposed_area_km2"]
+        >= fcst.simulations["baseline_forecast"].metrics["exposed_area_km2"]
+    )
+
+    alert = assess_alert(
+        mock_inputs,
+        fcst.simulations["hypothetical_cloudburst"],
+        is_hypothetical=True,
+    )
+    assert alert.tier in {"Normal", "Advisory", "Watch", "Warning", "Emergency"}
+    assert "NOT an official flood warning" in alert.caveat
+    assert 0.0 <= alert.safe_area_pct <= 100.0
+    assert len(alert.vulnerable_zones) == 4
+
+
+def test_mode_b_pareto_frontier(mock_inputs):
+    from floodforge.optimizer import pareto_frontier
+
+    pts = pareto_frontier(
+        mock_inputs,
+        rainfall_mm=100.0,
+        duration_hr=3.0,
+        budgets_pkr=[2_000_000.0, 6_000_000.0],
+        n_iter=40,
+        seed=5,
+    )
+    assert len(pts) == 2
+    assert pts[0].total_cost_pkr <= 2_000_000.0
+    assert pts[1].total_cost_pkr <= 6_000_000.0
+    assert pts[1].best_score >= pts[0].best_score - 1e-9
