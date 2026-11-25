@@ -208,3 +208,59 @@ def test_mode_b_pareto_frontier(mock_inputs):
     assert pts[0].total_cost_pkr <= 2_000_000.0
     assert pts[1].total_cost_pkr <= 6_000_000.0
     assert pts[1].best_score >= pts[0].best_score - 1e-9
+
+
+def test_real_data_quirks_sanitization_and_raster_facilities(tmp_path):
+    """Ensure NaNs, -99999 NoData, f_imp.npy, rasterized facilities.npy, and 2 Tehsils work."""
+    from floodforge.alerts import assess_alert
+    from floodforge.io import summarize_inputs
+
+    shape = (40, 40)
+    xv, yv = np.meshgrid(np.linspace(0, 1, 40), np.linspace(0, 1, 40))
+    dem = (20.0 * (1.0 - 0.5 * xv - 0.5 * yv)).astype(np.float32)
+    dem[0, 0] = np.nan
+    dem[-1, -1] = np.nan
+
+    f_imp = np.full(shape, 0.805, dtype=np.float32)
+    f_imp[0:2, 0:2] = np.nan  # ESA class 0 masked to NaN
+
+    pop = np.full(shape, 15.0, dtype=np.float32)
+    pop[0, :] = -99999.0  # WorldPop NoData
+    pop[:, 0] = np.nan
+
+    buildings = np.zeros(shape, dtype=np.float32)
+    buildings[25:35, 25:35] = 1.0
+    buildings[0, 0] = np.nan
+
+    roads = np.zeros(shape, dtype=np.float32)
+    roads[20, :] = 1.0
+
+    facilities = np.zeros(shape, dtype=np.float32)
+    facilities[30, 30] = 1.0
+    facilities[5, 5] = 1.0
+
+    zones = np.where(yv < 0.5, 1.0, 2.0).astype(np.float32)
+    zones[0, 0] = np.nan
+
+    np.save(tmp_path / "dem.npy", dem)
+    np.save(tmp_path / "f_imp.npy", f_imp)
+    np.save(tmp_path / "population.npy", pop)
+    np.save(tmp_path / "buildings.npy", buildings)
+    np.save(tmp_path / "roads.npy", roads)
+    np.save(tmp_path / "facilities.npy", facilities)
+    np.save(tmp_path / "zones.npy", zones)
+
+    loaded = load_inputs(tmp_path)
+    summary = summarize_inputs(loaded)
+    assert summary["shape"] == shape
+    assert summary["facility_count"] == 2
+    assert summary["equity_zones"] == [1, 2]
+    assert np.all(np.isfinite(loaded["dem"]))
+    assert np.all(np.isfinite(loaded["population"]))
+
+    sim = simulate(loaded, rainfall_mm=100.0, duration_hr=3.0)
+    assert np.all(np.isfinite(sim.depth))
+    assert np.isfinite(sim.metrics["population_exposed"])
+
+    alert = assess_alert(loaded, sim)
+    assert len(alert.vulnerable_zones) == 2

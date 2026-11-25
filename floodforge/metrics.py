@@ -31,22 +31,29 @@ def compute_metrics(inputs: dict, flooded_mask: np.ndarray) -> dict:
     cell_area_km2 = (cell_size_m * cell_size_m) / 1_000_000.0
 
     exposed_area_km2 = float(np.sum(mask) * cell_area_km2)
-    buildings_exposed = int(np.sum(inputs["buildings"][mask]))
-    population_exposed = float(np.sum(inputs["population"][mask]))
+    buildings_vals = np.nan_to_num(inputs["buildings"][mask], nan=0.0)
+    buildings_exposed = int(np.sum(np.maximum(0, buildings_vals)))
+    pop_vals = np.nan_to_num(inputs["population"][mask], nan=0.0)
+    population_exposed = float(np.sum(np.maximum(0.0, pop_vals)))
 
     if "road_segments" in inputs and inputs["road_segments"] is not None:
-        seg_ids = inputs["road_segments"][mask]
+        seg_ids = np.nan_to_num(inputs["road_segments"][mask], nan=0)
         unique_segs = np.unique(seg_ids)
         road_segments_exposed = int(np.sum(unique_segs > 0))
     else:
-        road_segments_exposed = int(np.sum(inputs["roads"][mask] > 0))
+        road_vals = np.nan_to_num(inputs["roads"][mask], nan=0)
+        road_segments_exposed = int(np.sum(road_vals > 0))
 
     facilities_exposed = 0
     rows, cols = mask.shape
-    for fac in inputs.get("facilities", []):
-        r, c = int(fac[0]), int(fac[1])
-        if 0 <= r < rows and 0 <= c < cols and mask[r, c]:
-            facilities_exposed += 1
+    fac_data = inputs.get("facilities", [])
+    if isinstance(fac_data, np.ndarray) and fac_data.ndim == 2:
+        facilities_exposed = int(np.sum(np.nan_to_num(fac_data[mask], nan=0) > 0))
+    else:
+        for fac in fac_data:
+            r, c = int(fac[0]), int(fac[1])
+            if 0 <= r < rows and 0 <= c < cols and mask[r, c]:
+                facilities_exposed += 1
 
     return {
         "exposed_area_km2": exposed_area_km2,

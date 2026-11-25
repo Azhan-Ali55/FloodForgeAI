@@ -97,10 +97,16 @@ def identify_vulnerable_zones(inputs: dict, sim_result) -> list[dict]:
             {
                 "zone": z,
                 "flooded_area_km2": round(float(np.sum(flooded_in_z) * cell_area_km2), 4),
-                "population_exposed": round(float(np.sum(inputs["population"][flooded_in_z])), 1),
-                "buildings_exposed": int(np.sum(inputs["buildings"][flooded_in_z])),
-                "max_depth_m": round(float(np.max(sim_result.depth[z_mask])), 2),
-                "mean_imperviousness": round(float(np.mean(inputs["landcover_imperviousness"][z_mask])), 2),
+                "population_exposed": round(
+                    float(np.sum(np.maximum(0.0, np.nan_to_num(inputs["population"][flooded_in_z], nan=0.0)))), 1
+                ),
+                "buildings_exposed": int(
+                    np.sum(np.maximum(0, np.nan_to_num(inputs["buildings"][flooded_in_z], nan=0)))
+                ),
+                "max_depth_m": round(float(np.nanmax(sim_result.depth[z_mask])), 2),
+                "mean_imperviousness": round(
+                    float(np.nanmean(inputs["landcover_imperviousness"][z_mask])), 2
+                ),
             }
         )
 
@@ -119,7 +125,13 @@ def find_safe_zones(inputs: dict, sim_result, safety_margin_m: float = 0.05) -> 
     safe_pct = float(100.0 * np.mean(~mask))
     safe_facilities = []
 
-    for fac in inputs.get("facilities", []):
+    fac_data = inputs.get("facilities", [])
+    if isinstance(fac_data, np.ndarray) and fac_data.ndim == 2:
+        fac_iter = [(int(r), int(c), "critical_facility") for r, c in np.argwhere(np.nan_to_num(fac_data, nan=0) > 0)]
+    else:
+        fac_iter = fac_data
+
+    for fac in fac_iter:
         r, c, f_type = int(fac[0]), int(fac[1]), str(fac[2])
         if 0 <= r < rows and 0 <= c < cols:
             is_safe = bool((not mask[r, c]) and (depth[r, c] <= safety_margin_m))

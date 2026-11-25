@@ -4,21 +4,42 @@ Run:
     python verify_demo.py
 """
 
+import argparse
+from pathlib import Path
 import time
 import matplotlib.pyplot as plt
 import numpy as np
 
-from floodforge.io import load_inputs
+from floodforge.io import load_inputs, summarize_inputs
 from floodforge.optimizer import optimize
 from floodforge.simulation import simulate
 
 
 def main():
+    parser = argparse.ArgumentParser(description="FloodForge AI verification demo.")
+    parser.add_argument("--data", type=str, default="data/real_nullah_lai", help="Path to real data folder or .npz")
+    args = parser.parse_args()
+
     print("=" * 64)
     print("FloodForge AI - Full Verification Demo")
     print("=" * 64)
 
-    inputs = load_inputs(path=None, seed=42)
+    data_path = Path(args.data)
+    if not data_path.exists() and Path(f"{args.data}.npz").exists():
+        data_path = Path(f"{args.data}.npz")
+    using_real = data_path.exists()
+    print(f"Data source: {data_path if using_real else 'synthetic mock fallback'}")
+
+    inputs = load_inputs(path=data_path if using_real else None, seed=42)
+    summary = summarize_inputs(inputs)
+    print(
+        f"Grid: {summary['shape']} @ {summary['cell_size_m']:.0f}m | "
+        f"DEM: {summary['dem_min_m']}..{summary['dem_max_m']}m | "
+        f"Imperv mean: {summary['mean_impervious_pct']}% | "
+        f"Buildings: {summary['total_buildings']} | "
+        f"Facilities: {summary['facility_count']} | "
+        f"Zones: {summary['equity_zones']}"
+    )
     rainfall_mm = 100.0
     duration_hr = 3.0
     budget_pkr = 8_000_000.0
