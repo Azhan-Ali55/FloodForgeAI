@@ -666,12 +666,16 @@ export function GeospatialMap({
       }
     }
 
-    // 4. Building exposure clusters
+    // 4. Building exposure clusters (only high-density exposed hotspots so dots don't form a uniform grid)
     if (layers.buildings) {
       for (let r = 2; r < twin.rows; r += 3) {
         for (let c = 2; c < twin.cols; c += 3) {
           const idx = r * twin.cols + c;
-          if (twin.buildings[idx] >= 3 && simResult.exposed_mask[idx] === 1) {
+          if (
+            twin.buildings[idx] >= 6 &&
+            simResult.exposed_mask[idx] === 1 &&
+            simResult.accumulation_mm[idx] >= 65
+          ) {
             const lat =
               twin.bbox_wgs84.north -
               ((r + 0.5) / twin.rows) * (twin.bbox_wgs84.north - twin.bbox_wgs84.south);
@@ -679,11 +683,11 @@ export function GeospatialMap({
               twin.bbox_wgs84.west +
               ((c + 0.5) / twin.cols) * (twin.bbox_wgs84.east - twin.bbox_wgs84.west);
             L.circleMarker([lat, lon], {
-              radius: 2.3,
-              color: '#EF8735',
+              radius: 2.6,
+              color: '#D94343',
               weight: 1,
               fillColor: '#EF8735',
-              fillOpacity: 0.6,
+              fillOpacity: 0.72,
             }).addTo(group);
           }
         }

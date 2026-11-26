@@ -58,9 +58,9 @@ const STORM_PRESETS: Array<{
     tag: 'HYPOTHETICAL_STRESS_TEST',
   },
   {
-    name: '2001-Scale Extreme Event',
-    intensity: 120,
-    duration: 4,
+    name: '2001 Cloudburst (620 mm / 10h)',
+    intensity: 62,
+    duration: 10,
     wetness: 'saturated',
     tag: 'HYPOTHETICAL_STRESS_TEST',
   },
@@ -125,6 +125,54 @@ export function FloodPrediction() {
       }),
     [twin, simActiveResult]
   );
+
+  const preparednessActions = useMemo(() => {
+    const actions: Array<{ priority: 'HIGH' | 'MEDIUM' | 'ROUTINE'; text: string }> = [];
+    const totalRain = Number(
+      (
+        simScenario.rainfall_mm_per_hr *
+        simScenario.duration_hr *
+        (simScenario.uncertainty_factor ?? 1)
+      ).toFixed(0)
+    );
+
+    if (simActiveResult.metrics.exposed_area_km2 <= 0.1) {
+      actions.push({
+        priority: 'ROUTINE',
+        text: `Modeled accumulation is within routine drainage capacity (${totalRain} mm scenario). Maintain standard WASA monitoring.`,
+      });
+      return actions;
+    }
+
+    const hospitals = exposedFacilityList.filter((f) => f.type === 'hospital');
+    const rescueNodes = exposedFacilityList.filter((f) => f.type === 'rescue_1122');
+    const wasaNodes = exposedFacilityList.filter((f) => f.type === 'wasa_station');
+
+    if (hospitals.length > 0) {
+      actions.push({
+        priority: 'HIGH',
+        text: `Protect backup power & ground-floor triage at ${hospitals.map((h) => h.name).join(', ')} (within modeled >=50 mm risk mask).`,
+      });
+    }
+    if (rescueNodes.length > 0 || wasaNodes.length > 0) {
+      const names = [...wasaNodes, ...rescueNodes].map((n) => n.name).join(', ');
+      actions.push({
+        priority: 'HIGH',
+        text: `Verify pump readiness & pre-position Rescue 1122 response units near ${names}.`,
+      });
+    }
+    if (simActiveResult.metrics.road_segments_exposed > 0) {
+      actions.push({
+        priority: 'MEDIUM',
+        text: `Issue pre-storm traffic diversion advisory for ${simActiveResult.metrics.road_segments_exposed} modeled flood-exposed arterial corridors (including low-lying Nullah Lai crossings).`,
+      });
+    }
+    actions.push({
+      priority: 'MEDIUM',
+      text: `Screening scenario (${totalRain} mm total) estimates ${simActiveResult.metrics.exposed_area_km2.toFixed(2)} km² exposed — cross-verify with official PMD & NDMA bulletins before public directives.`,
+    });
+    return actions;
+  }, [exposedFacilityList, simActiveResult, simScenario]);
 
   const comparisonRows = useMemo(() => {
     const b = simBaselineResult.metrics;
@@ -611,6 +659,47 @@ export function FloodPrediction() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Before-the-Storm Preparedness Action List */}
+          <div className="space-y-2 pt-2 border-t border-[#E6EAEF]">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-[#173C79]">
+                Before-the-Storm Preparedness Action List
+              </span>
+              <span className="text-[10px] font-mono text-[#5A6A7E]">
+                Derived from modeled exposure
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {preparednessActions.map((act, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    'p-2 rounded-sm border text-[11px] flex items-start gap-2',
+                    act.priority === 'HIGH'
+                      ? 'bg-[#FBEBEB]/60 border-[#D94343]/40 text-[#26364A]'
+                      : act.priority === 'MEDIUM'
+                        ? 'bg-[#FDF1E7]/70 border-[#EF8735]/40 text-[#26364A]'
+                        : 'bg-[#EDF7EE] border-[#55A85F]/40 text-[#2F6F37]'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'px-1.5 py-0.5 rounded-sm text-[9px] font-mono font-bold flex-shrink-0 mt-0.5',
+                      act.priority === 'HIGH'
+                        ? 'bg-[#D94343] text-white'
+                        : act.priority === 'MEDIUM'
+                          ? 'bg-[#EF8735] text-white'
+                          : 'bg-[#55A85F] text-white'
+                    )}
+                  >
+                    {act.priority}
+                  </span>
+                  <span className="leading-snug">{act.text}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="p-3 rounded-sm bg-[#FEF9E7] border border-[#E0B422]/60 flex items-start gap-2.5 text-[11px] text-[#26364A]">

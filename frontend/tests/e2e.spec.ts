@@ -141,11 +141,12 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
       page.getByText('Rainfall intensity must be between 5 and 200 mm/hr.')
     ).toBeVisible();
 
-    await page.getByRole('button', { name: 'Severe Cloudburst' }).click();
+    await page.getByRole('button', { name: '2001 Cloudburst (620 mm / 10h)' }).click();
     await page.getByRole('button', { name: /Run Flood Simulation/i }).click();
     await expect(
       page.getByText('Rainfall intensity must be between 5 and 200 mm/hr.')
     ).toBeHidden();
+    await expect(page.getByText('Before-the-Storm Preparedness Action List')).toBeVisible();
 
     // Reports tabs & optimizer validation
     await page.goto('/reports');

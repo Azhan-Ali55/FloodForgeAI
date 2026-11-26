@@ -122,7 +122,7 @@ export function TopBar() {
             disabled={isSyncingWeather}
             title="Synchronize Open-Meteo telemetry for Nullah Lai (33.65°N, 73.06°E)"
             className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border text-[11px] font-semibold transition-colors cursor-pointer',
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer',
               isLiveWeather
                 ? 'bg-[#EDF7EE] border-[#55A85F]/60 text-[#2F6F37] hover:bg-[#E1F2E3]'
                 : 'bg-[#FEF9E7] border-[#E0B422]/70 text-[#8A6700] hover:bg-[#FCF3CF]'
@@ -142,7 +142,7 @@ export function TopBar() {
 
           <div
             title="Last synchronization timestamp (Asia/Karachi)"
-            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] text-[11px] font-mono text-[#26364A]"
+            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] text-[11px] font-mono text-[#26364A] whitespace-nowrap"
           >
             <Clock className="w-3 h-3 text-[#173C79]" />
             <span>{weather.fetchedAtPkt}</span>
