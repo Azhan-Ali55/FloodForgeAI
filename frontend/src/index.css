@@ -1,0 +1,147 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@layer base {
+  :root {
+    --ff-navy: #173C79;
+    --ff-blue: #244D8F;
+    --ff-bg: #F5F6F7;
+    --ff-panel: #FFFFFF;
+    --ff-surface: #F0F1F2;
+    --ff-border: #D6DCE4;
+    --ff-safe: #55A85F;
+    --ff-moderate: #F2C94C;
+    --ff-high: #EF8735;
+    --ff-critical: #D94343;
+    --ff-text: #26364A;
+    --ff-text-muted: #5A6A7E;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    font-family: 'Source Sans 3', 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #F5F6F7;
+    color: #26364A;
+    margin: 0;
+  }
+
+  h1, h2, h3, .font-heading {
+    font-family: 'Inter', 'Source Sans 3', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Municipal clean scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F0F1F2;
+}
+::-webkit-scrollbar-thumb {
+  background: #C5CED9;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9AA7B8;
+}
+
+input[type='range'] {
+  accent-color: #173C79;
+}
+
+/* Leaflet Municipal Light Green Cartographic Overrides */
+.leaflet-container {
+  background: #DCEAD5 !important;
+  font-family: 'Source Sans 3', 'Inter', system-ui, sans-serif !important;
+}
+
+/* Subtle sage-green municipal cartographic tint on OSM tiles */
+.municipal-green-tiles {
+  filter: sepia(16%) hue-rotate(58deg) saturate(82%) brightness(1.03) contrast(0.96);
+}
+
+.leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.9) !important;
+  color: #5A6A7E !important;
+  border-top: 1px solid #D6DCE4 !important;
+  border-left: 1px solid #D6DCE4 !important;
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+}
+
+.leaflet-control-attribution a {
+  color: #173C79 !important;
+}
+
+.leaflet-control-scale-line {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border: 1px solid #9AA7B8 !important;
+  border-top: none !important;
+  color: #26364A !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 10px !important;
+}
+
+/* Crisp white municipal station popup (Düsseldorf-style information card) */
+.ff-station-popup .leaflet-popup-content-wrapper {
+  background: #FFFFFF !important;
+  color: #26364A !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 4px !important;
+  box-shadow: 0 6px 20px rgba(23, 60, 121, 0.16) !important;
+  padding: 0 !important;
+}
+
+.ff-station-popup .leaflet-popup-content {
+  margin: 0 !important;
+  width: 288px !important;
+}
+
+.ff-station-popup .leaflet-popup-tip-container {
+  width: 20px;
+  height: 11px;
+}
+
+.ff-station-popup .leaflet-popup-tip {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  box-shadow: 0 3px 8px rgba(23, 60, 121, 0.12) !important;
+}
+
+/* Geographic map labels */
+.ff-map-label {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #36523A !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.92), 0 0 3px rgba(255, 255, 255, 0.95);
+  pointer-events: none !important;
+}
+
+.ff-station-tooltip {
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #173C79 !important;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 3px !important;
+  box-shadow: 0 2px 8px rgba(23, 60, 121, 0.12) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 2px 6px !important;
+}
