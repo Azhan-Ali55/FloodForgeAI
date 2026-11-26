@@ -148,6 +148,15 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
     ).toBeHidden();
     await expect(page.getByText('Before-the-Storm Preparedness Action List')).toBeVisible();
 
+    // Past Flood Hindcast & Prevention Impact section
+    await expect(
+      page.getByRole('heading', {
+        name: /Past Flood Hindcast & Prevention Impact/i,
+      })
+    ).toBeVisible();
+    await expect(page.getByText('Buildings Protected')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Residents Protected')).toBeVisible();
+
     // Reports tabs & optimizer validation
     await page.goto('/reports');
     await page.getByRole('button', { name: /Zone Equity & Risk-Transfer Audit/i }).click();
