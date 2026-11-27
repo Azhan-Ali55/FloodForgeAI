@@ -51,7 +51,13 @@ export interface BackendForecastSummary {
   fetched_at_utc?: string;
   aligned_pkt_time?: string | null;
   coverage_pct?: number;
+  horizon_coverage?: {
+    '24h': number;
+    '48h': number;
+    '72h': number;
+  };
   missing_future_hours?: number;
+  gap_hours_count?: number;
   soil_moisture_0_to_1cm: number | null;
   antecedent_wetness: AntecedentWetnessLevel | 'unavailable';
   peak_6h_total_mm: number;
@@ -175,8 +181,8 @@ export interface HourlyWeatherPoint {
   timestampIso: string;
   label: string;
   hourOffset: number;
-  precipitationMm: number;
-  probabilityPct: number;
+  precipitationMm: number | null;
+  probabilityPct: number | null;
   temperatureC: number | null;
   humidityPct: number | null;
   windSpeedKmh: number | null;
@@ -192,7 +198,7 @@ export interface DailyWeatherPoint {
   minTempC: number | null;
   maxTempC: number | null;
   avgTempC: number | null;
-  rainfallMm: number;
+  rainfallMm: number | null;
   maxWindKmh: number | null;
   maxProbabilityPct: number;
   weatherCode: number | null;
@@ -209,9 +215,9 @@ export interface OutlookDayPoint {
   isAvailable: boolean;
   confidenceTier: ForecastConfidenceTier;
   confidenceLabel: string;
-  rainfallMm: number;
-  p90RainfallMm: number;
-  probabilityPct: number;
+  rainfallMm: number | null;
+  p90RainfallMm: number | null;
+  probabilityPct: number | null;
   minTempC: number | null;
   maxTempC: number | null;
   weatherCode: number | null;

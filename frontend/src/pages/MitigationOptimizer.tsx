@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   CheckCircle2,
   Coins,
   Loader2,
+  Scale,
   Sliders,
   Sparkles,
   TrendingUp,
@@ -43,13 +45,14 @@ const WEIGHT_FIELDS: Array<{ key: keyof OptimizationWeights; label: string }> = 
 export function MitigationOptimizer() {
   const {
     operationalMode,
-    setOperationalMode,
     activeThresholdMm,
     optConfig,
     setOptConfig,
     setPitchBudgetPkr,
     optResult,
     isOptimizing,
+    isOptStale,
+    optError,
     optProgressStage,
     runOptimization,
   } = useFloodForge();
@@ -109,40 +112,39 @@ export function MitigationOptimizer() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Flood Mitigation Investment Optimizer"
+        title="Mitigation Portfolio Optimizer"
         subtitle={PILOT_CONFIG.comparison_label}
         rightSlot={
-          <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#26364A]">
-            <div className="flex items-center rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] p-0.5 font-sans font-semibold text-[11px]">
-              <button
-                type="button"
-                onClick={() => setOperationalMode('live_ops')}
-                className={cn(
-                  'px-2.5 py-1 rounded-xs cursor-pointer',
-                  operationalMode === 'live_ops' ? 'bg-[#173C79] text-white' : 'text-[#5A6A7E]'
-                )}
-              >
-                Live Ops (50mm)
-              </button>
-              <button
-                type="button"
-                onClick={() => setOperationalMode('demo_2001')}
-                className={cn(
-                  'px-2.5 py-1 rounded-xs cursor-pointer',
-                  operationalMode === 'demo_2001' ? 'bg-[#D94343] text-white' : 'text-[#5A6A7E]'
-                )}
-              >
-                2001 Demo (150mm)
-              </button>
-            </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#0F172A]">
             {optResult && (
-              <span className="px-2.5 py-1 rounded-sm bg-[#EDF7EE] border border-[#55A85F]/50 text-[#2F6F37] font-sans font-semibold text-[11px]">
+              <span className="px-2.5 py-1 rounded bg-[#F1F5F9] border border-[#E2E8F0] text-[#334155] font-sans font-medium text-xs">
+                Engine: {optResult.engineSource === 'python_api' ? 'Python Backend' : 'Local D8'}
+              </span>
+            )}
+            <Link
+              to="/equity"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#CBD5E1] hover:bg-[#F8FAFC] text-[#0F172A] font-sans font-medium text-xs"
+            >
+              <Scale className="w-3.5 h-3.5 text-[#0F766E]" />
+              Risk-Transfer Audit
+            </Link>
+            {optResult && (
+              <span className="px-2.5 py-1 rounded bg-[#ECFDF5] border border-[#A7F3D0] text-[#065F46] font-sans font-medium text-xs">
                 {activeThresholdMm} mm {operationalMode === 'demo_2001' ? 'Severe Cutoff' : 'Flood Cutoff'}
               </span>
             )}
           </div>
         }
       />
+
+      {(optError || isOptStale) && (
+        <div
+          role="alert"
+          className="px-3.5 py-2 rounded-md border border-[#FED7AA] bg-[#FFF7ED] text-[#9A3412] text-xs font-medium"
+        >
+          {optError || 'Recomputing mitigation portfolio for updated configuration...'}
+        </div>
+      )}
 
       {optResult && (
         <EquityStatusBanner
@@ -329,7 +331,11 @@ export function MitigationOptimizer() {
                   tone="success"
                   label="Est. Exposure Reduction"
                   icon={<TrendingUp className="w-4 h-4 text-[#55A85F]" />}
-                  value={<span className="text-lg">-{optResult.weightedReductionPct}%</span>}
+                  value={
+                    <span className="text-lg">
+                      {optResult.weightedReductionPct > 0 ? `-${optResult.weightedReductionPct}%` : '0%'}
+                    </span>
+                  }
                   subtext="Weighted objective gain"
                 />
 
@@ -338,22 +344,22 @@ export function MitigationOptimizer() {
                   label="Lift vs. Random Portfolios"
                   icon={<Zap className="w-4 h-4 text-[#EF8735]" />}
                   value={<span className="text-lg">+{optResult.improvementOverRandomPct}%</span>}
-                  subtext={`Random avg: -${optResult.avgRandomReductionPct}%`}
+                  subtext={`Random avg: ${optResult.avgRandomReductionPct > 0 ? `-${optResult.avgRandomReductionPct}%` : '0%'}`}
                 />
               </div>
 
               <MunicipalPanel
                 title="Multi-Budget Pareto Frontier vs. Random Portfolios"
                 rightSlot={
-                  <div className="flex items-center gap-3 text-[10px]">
-                    <span className="inline-flex items-center gap-1 text-white/90">
-                      <span className="w-2 h-2 rounded-full bg-white" /> Pareto
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="inline-flex items-center gap-1.5 text-[#0F172A] font-medium">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#1D4ED8]" /> Pareto
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[#9AE6B4]">
-                      <span className="w-2 h-2 rounded-full bg-[#9AE6B4]" /> Selected
+                    <span className="inline-flex items-center gap-1.5 text-[#065F46] font-medium">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#059669]" /> Selected
                     </span>
-                    <span className="inline-flex items-center gap-1 text-[#FBD38D]">
-                      <span className="w-2 h-2 rounded-full bg-[#FBD38D]" /> Random
+                    <span className="inline-flex items-center gap-1.5 text-[#9A3412] font-medium">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#EA580C]" /> Random
                     </span>
                   </div>
                 }
@@ -473,13 +479,15 @@ export function MitigationOptimizer() {
           title="Intervention Portfolio Allocation Table"
           icon={<Coins className="w-4 h-4" />}
           rightSlot={
-            <div className="flex items-center rounded-sm bg-[#244D8F] p-0.5 text-[10px]">
+            <div className="flex items-center rounded-md bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 text-xs">
               <button
                 type="button"
                 onClick={() => setTableFilter('selected')}
                 className={cn(
-                  'px-2.5 py-0.5 rounded-sm font-semibold cursor-pointer',
-                  tableFilter === 'selected' ? 'bg-white text-[#173C79]' : 'text-white/85'
+                  'px-2.5 py-0.5 rounded font-medium cursor-pointer',
+                  tableFilter === 'selected'
+                    ? 'bg-[#FFFFFF] text-[#0F172A] shadow-2xs border border-[#CBD5E1]'
+                    : 'text-[#64748B] hover:text-[#0F172A] border border-transparent'
                 )}
               >
                 Selected ({optResult.selectedPortfolio.length})
@@ -488,8 +496,10 @@ export function MitigationOptimizer() {
                 type="button"
                 onClick={() => setTableFilter('all')}
                 className={cn(
-                  'px-2.5 py-0.5 rounded-sm font-semibold cursor-pointer',
-                  tableFilter === 'all' ? 'bg-white text-[#173C79]' : 'text-white/85'
+                  'px-2.5 py-0.5 rounded font-medium cursor-pointer',
+                  tableFilter === 'all'
+                    ? 'bg-[#FFFFFF] text-[#0F172A] shadow-2xs border border-[#CBD5E1]'
+                    : 'text-[#64748B] hover:text-[#0F172A] border border-transparent'
                 )}
               >
                 All ({optResult.allCandidates.length})

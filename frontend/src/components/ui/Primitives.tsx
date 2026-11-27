@@ -5,7 +5,7 @@ import type { AlertTier, ScenarioTag, StationRiskLevel } from '../../types/flood
 import { cn } from '../../utils/cn';
 
 /**
- * Standardized municipal page header with title, concise subtitle, and optional actions.
+ * Clean workspace page header with navy title, muted description, and right action slot.
  */
 export function PageHeader({
   title,
@@ -17,13 +17,13 @@ export function PageHeader({
   rightSlot?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="font-heading text-xl font-bold text-[#173C79] tracking-tight">
+        <h1 className="font-heading text-xl font-semibold text-[#0F172A] tracking-tight">
           {title}
         </h1>
         {subtitle && (
-          <p className="text-xs sm:text-sm text-[#5A6A7E] mt-0.5 leading-snug">
+          <p className="text-xs sm:text-sm text-[#475569] mt-0.5 leading-snug">
             {subtitle}
           </p>
         )}
@@ -34,7 +34,7 @@ export function PageHeader({
 }
 
 /**
- * Municipal white panel card with thin grey border and subtle elevation.
+ * Minimal off-white surface card with subtle border and hairline shadow.
  */
 export function PanelCard({
   children,
@@ -48,7 +48,7 @@ export function PanelCard({
   return (
     <div
       className={cn(
-        'bg-[#FFFFFF] border border-[#D6DCE4] rounded shadow-[0_1px_4px_rgba(23,60,121,0.06)]',
+        'bg-[#FFFFFF] border border-[#E2E8F0] rounded-md shadow-[0_1px_2px_rgba(15,23,42,0.04)]',
         padding,
         className
       )}
@@ -59,7 +59,7 @@ export function PanelCard({
 }
 
 /**
- * Standardized KPI stat card used across dashboards, telemetry, and reports.
+ * Compact quantitative stat tile adhering to >= 11px label typography.
  */
 export function StatCard({
   label,
@@ -78,44 +78,44 @@ export function StatCard({
 }) {
   const toneStyles: Record<typeof tone, { card: string; label: string; value: string }> = {
     neutral: {
-      card: 'bg-white border-[#D6DCE4]',
-      label: 'text-[#5A6A7E]',
-      value: 'text-[#26364A]',
+      card: 'bg-[#FFFFFF] border-[#E2E8F0]',
+      label: 'text-[#64748B]',
+      value: 'text-[#0F172A]',
     },
     primary: {
-      card: 'bg-[#EEF3FA] border-[#173C79]/35',
-      label: 'text-[#173C79]',
-      value: 'text-[#173C79]',
+      card: 'bg-[#EFF6FF] border-[#BFDBFE]',
+      label: 'text-[#1D4ED8]',
+      value: 'text-[#0F172A]',
     },
     success: {
-      card: 'bg-[#EDF7EE] border-[#55A85F]/50',
-      label: 'text-[#2F6F37]',
-      value: 'text-[#2F6F37]',
+      card: 'bg-[#ECFDF5] border-[#A7F3D0]',
+      label: 'text-[#065F46]',
+      value: 'text-[#065F46]',
     },
     warning: {
-      card: 'bg-[#FDF1E7] border-[#EF8735]/50',
-      label: 'text-[#A64D0B]',
-      value: 'text-[#C75E10]',
+      card: 'bg-[#FFF7ED] border-[#FED7AA]',
+      label: 'text-[#9A3412]',
+      value: 'text-[#C2410C]',
     },
     danger: {
-      card: 'bg-[#FBEBEB] border-[#D94343]/50',
-      label: 'text-[#A12323]',
-      value: 'text-[#D94343]',
+      card: 'bg-[#FEF2F2] border-[#FECACA]',
+      label: 'text-[#991B1B]',
+      value: 'text-[#B91C1C]',
     },
   };
   const st = toneStyles[tone];
 
   return (
-    <div className={cn('p-3 rounded-sm border', st.card, className)}>
-      <div className={cn('flex items-center justify-between text-[10px] font-bold uppercase tracking-wider', st.label)}>
+    <div className={cn('p-3 rounded-md border', st.card, className)}>
+      <div className={cn('flex items-center justify-between text-[11px] font-semibold tracking-wide', st.label)}>
         <span>{label}</span>
         {icon}
       </div>
-      <div className={cn('text-xl sm:text-2xl font-bold font-mono mt-0.5 flex items-center gap-2', st.value)}>
+      <div className={cn('text-xl sm:text-2xl font-semibold font-mono mt-1 flex items-center gap-2', st.value)}>
         {value}
       </div>
       {subtext && (
-        <div className="text-[11px] font-mono text-[#5A6A7E] mt-0.5 truncate">
+        <div className="text-[11px] font-mono text-[#64748B] mt-1 truncate">
           {subtext}
         </div>
       )}
@@ -142,19 +142,19 @@ export function EquityStatusBanner({
   const isWarning = hasFloodRisk && equityFlagged;
   const Icon = isWarning ? AlertTriangle : CheckCircle2;
   const title = !hasFloodRisk
-    ? 'No Flood Risk Modeled: Mitigation solutions are not required under current conditions.'
+    ? 'No flood risk modeled: mitigation interventions are not required under current conditions.'
     : isWarning
-      ? 'Risk Transfer Warning: Downstream Rawalpindi building exposure rose >2%.'
+      ? 'Risk transfer warning: downstream Rawalpindi building exposure rose above 2%.'
       : PILOT_CONFIG.equity_pass_banner;
 
   return (
     <div
       role="status"
       className={cn(
-        'px-3.5 py-2 rounded-sm border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs',
+        'px-3.5 py-2.5 rounded-md border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs',
         isWarning
-          ? 'bg-[#FBEBEB] border-[#D94343] text-[#A12323]'
-          : 'bg-[#EDF7EE] border-[#55A85F] text-[#2F6F37]',
+          ? 'bg-[#FEF2F2] border-[#FECACA] text-[#991B1B]'
+          : 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46]',
         className
       )}
     >
@@ -163,7 +163,7 @@ export function EquityStatusBanner({
         <div className="min-w-0">
           <div className="font-semibold leading-snug">{title}</div>
           {description && (
-            <p className="text-[11px] text-[#26364A] mt-0.5 leading-snug">{description}</p>
+            <p className="text-[11px] text-[#334155] mt-0.5 leading-snug">{description}</p>
           )}
         </div>
       </div>
@@ -175,17 +175,20 @@ export function EquityStatusBanner({
 }
 
 /**
- * Municipal panel with a rectangular navy-blue (#173C79) section header bar.
+ * Minimal platform card panel with clean white header, hairline border, and navy title.
+ * Named MunicipalPanel for backwards compatibility across all secondary routes.
  */
 export function MunicipalPanel({
   title,
+  subtitle,
   icon,
   rightSlot,
   children,
   className,
-  bodyClassName = 'p-3.5',
+  bodyClassName = 'p-4',
 }: {
   title: string;
+  subtitle?: string;
   icon?: React.ReactNode;
   rightSlot?: React.ReactNode;
   children: React.ReactNode;
@@ -195,16 +198,21 @@ export function MunicipalPanel({
   return (
     <section
       className={cn(
-        'bg-[#FFFFFF] border border-[#D6DCE4] rounded shadow-[0_1px_4px_rgba(23,60,121,0.07)] overflow-hidden',
+        'bg-[#FFFFFF] border border-[#E2E8F0] rounded-md shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden',
         className
       )}
     >
-      <div className="bg-[#173C79] text-white px-3.5 py-2 flex flex-wrap items-center justify-between gap-2">
+      <div className="px-4 py-2.5 bg-[#FFFFFF] border-b border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          {icon && <span className="flex-shrink-0 text-white/90">{icon}</span>}
-          <h2 className="font-heading text-xs font-semibold uppercase tracking-wider leading-snug">
-            {title}
-          </h2>
+          {icon && <span className="flex-shrink-0 text-[#0F766E]">{icon}</span>}
+          <div className="min-w-0">
+            <h2 className="font-heading text-sm font-semibold text-[#0F172A] leading-snug truncate">
+              {title}
+            </h2>
+            {subtitle && (
+              <p className="text-[11px] text-[#64748B] truncate">{subtitle}</p>
+            )}
+          </div>
         </div>
         {rightSlot && <div className="flex-shrink-0 max-w-full">{rightSlot}</div>}
       </div>
@@ -216,23 +224,23 @@ export function MunicipalPanel({
 export function ScenarioTagBadge({ tag }: { tag: ScenarioTag }) {
   const meta: Record<ScenarioTag, { label: string; cls: string }> = {
     LIVE_FORECAST: {
-      label: 'LIVE FORECAST',
-      cls: 'bg-[#EDF7EE] text-[#2F6F37] border-[#55A85F]/60',
+      label: 'Live Forecast',
+      cls: 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]',
     },
     UNCERTAINTY_ENVELOPE: {
-      label: 'UNCERTAINTY ENVELOPE',
-      cls: 'bg-[#FEF9E7] text-[#8A6700] border-[#E0B422]/70',
+      label: 'Uncertainty Envelope',
+      cls: 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]',
     },
     HYPOTHETICAL_STRESS_TEST: {
-      label: 'STRESS TEST SCENARIO',
-      cls: 'bg-[#EEF3FA] text-[#173C79] border-[#244D8F]/40',
+      label: 'Simulated Scenario',
+      cls: 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]',
     },
   };
   const m = meta[tag];
   return (
     <span
       className={cn(
-        'inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-mono font-semibold tracking-wider border',
+        'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border whitespace-nowrap',
         m.cls
       )}
     >
@@ -257,12 +265,12 @@ export function AlertTierBadge({
         borderColor: meta.border,
       }}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-sm border font-mono font-semibold tracking-wide',
-        size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[10px]'
+        'inline-flex items-center gap-1.5 rounded border font-semibold whitespace-nowrap',
+        size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[11px]'
       )}
     >
       <span
-        className="w-1.5 h-1.5 rounded-full"
+        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
         style={{ backgroundColor: meta.color }}
       />
       {meta.label}
@@ -286,7 +294,7 @@ export function StationRiskBadge({
         borderColor: meta.borderHex,
       }}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-sm border font-semibold',
+        'inline-flex items-center gap-1.5 rounded border font-semibold whitespace-nowrap',
         size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[11px]'
       )}
     >
@@ -298,4 +306,3 @@ export function StationRiskBadge({
     </span>
   );
 }
-

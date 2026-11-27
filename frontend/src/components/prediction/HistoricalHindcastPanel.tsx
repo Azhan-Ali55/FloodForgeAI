@@ -203,7 +203,7 @@ export function HistoricalHindcastPanel() {
       title="Past Flood Hindcast & Prevention Impact"
       icon={<History className="w-4 h-4" />}
       rightSlot={
-        <span className="text-[10px] font-mono text-white/90">
+        <span className="text-xs font-mono text-[#64748B]">
           Historical Counterfactual Replay
         </span>
       }

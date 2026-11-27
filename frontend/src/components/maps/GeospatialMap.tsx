@@ -57,7 +57,9 @@ interface GeospatialMapProps {
   onActiveRasterChange?: (r: MapRasterLayer) => void;
   basemap?: BasemapStyle;
   onBasemapChange?: (b: BasemapStyle) => void;
-  viewMode?: 'mitigated' | 'baseline' | 'delta';
+  viewMode?: 'mitigated' | 'baseline' | 'delta' | 'compare';
+  compareSplitPct?: number;
+  onCompareSplitChange?: (pct: number) => void;
   rasterOpacity?: number;
   selectedFeature?: SelectedMapFeature | null;
   onSelectFeature?: (f: SelectedMapFeature | null) => void;
@@ -243,6 +245,8 @@ export function GeospatialMap({
   basemap: externalBasemap,
   onBasemapChange,
   viewMode = 'mitigated',
+  compareSplitPct = 50,
+  onCompareSplitChange,
   rasterOpacity = 0.58,
   selectedFeature: externalFeature,
   onSelectFeature,
@@ -265,6 +269,7 @@ export function GeospatialMap({
   const vegOverlayRef = useRef<L.ImageOverlay | null>(null);
   const zoneOverlayRef = useRef<L.ImageOverlay | null>(null);
   const imageOverlayRef = useRef<L.ImageOverlay | null>(null);
+  const baselineOverlayRef = useRef<L.ImageOverlay | null>(null);
   const safeZoneOverlayRef = useRef<L.ImageOverlay | null>(null);
   const vectorGroupRef = useRef<L.LayerGroup | null>(null);
   const stationGroupRef = useRef<L.LayerGroup | null>(null);
@@ -498,6 +503,8 @@ export function GeospatialMap({
   const rasterVisible =
     layers.flood_risk || layers.rainfall || layers.elevation || layers.population;
 
+  const isSplitCompare = viewMode === 'compare' && activeRaster === 'flood_risk' && Boolean(baselineResult);
+
   const rasterDataUrl = useMemo(() => {
     if (!rasterVisible) return '';
     return renderRasterOverlayDataUrl(
@@ -506,9 +513,21 @@ export function GeospatialMap({
       simResult,
       scenario,
       baselineResult,
-      viewMode
+      viewMode === 'compare' ? 'mitigated' : viewMode
     );
   }, [rasterVisible, activeRaster, twin, simResult, scenario, baselineResult, viewMode]);
+
+  const baselineCompareDataUrl = useMemo(() => {
+    if (!rasterVisible || !isSplitCompare || !baselineResult) return '';
+    return renderRasterOverlayDataUrl(
+      'flood_risk',
+      twin,
+      simResult,
+      scenario,
+      baselineResult,
+      'baseline'
+    );
+  }, [rasterVisible, isSplitCompare, twin, simResult, scenario, baselineResult]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -517,6 +536,10 @@ export function GeospatialMap({
     if (imageOverlayRef.current) {
       map.removeLayer(imageOverlayRef.current);
       imageOverlayRef.current = null;
+    }
+    if (baselineOverlayRef.current) {
+      map.removeLayer(baselineOverlayRef.current);
+      baselineOverlayRef.current = null;
     }
 
     if (rasterVisible && rasterDataUrl) {
@@ -528,8 +551,70 @@ export function GeospatialMap({
       });
       overlay.addTo(map);
       imageOverlayRef.current = overlay;
+
+      if (isSplitCompare && baselineCompareDataUrl) {
+        const baseOverlay = L.imageOverlay(baselineCompareDataUrl, bounds, {
+          opacity: rasterOpacity,
+          interactive: false,
+        });
+        baseOverlay.addTo(map);
+        baselineOverlayRef.current = baseOverlay;
+      }
     }
-  }, [rasterVisible, rasterDataUrl, twin.bbox_wgs84, rasterOpacity]);
+  }, [
+    rasterVisible,
+    rasterDataUrl,
+    isSplitCompare,
+    baselineCompareDataUrl,
+    twin.bbox_wgs84,
+    rasterOpacity,
+  ]);
+
+  // Synchronize Before/After raster clip-path accurately on pan, zoom, and slider drag
+  useEffect(() => {
+    const map = mapRef.current;
+    const afterEl = imageOverlayRef.current?.getElement();
+    const beforeEl = baselineOverlayRef.current?.getElement();
+
+    if (!map || !afterEl) return;
+    if (!isSplitCompare || !beforeEl) {
+      afterEl.style.clipPath = '';
+      if (beforeEl) beforeEl.style.clipPath = '';
+      return;
+    }
+
+    const syncClip = () => {
+      const bounds = L.latLngBounds(
+        [twin.bbox_wgs84.south, twin.bbox_wgs84.west],
+        [twin.bbox_wgs84.north, twin.bbox_wgs84.east]
+      );
+      const nwPx = map.latLngToContainerPoint(bounds.getNorthWest()).x;
+      const sePx = map.latLngToContainerPoint(bounds.getSouthEast()).x;
+      const splitPx = (map.getSize().x * Math.max(0, Math.min(100, compareSplitPct))) / 100;
+      const width = Math.max(1, sePx - nwPx);
+      const frac = Math.max(0, Math.min(1, (splitPx - nwPx) / width));
+      const pct = Number((frac * 100).toFixed(2));
+      // Before covers left side (0% -> pct), After covers right side (pct -> 100%)
+      beforeEl.style.clipPath = `inset(0 ${(100 - pct).toFixed(2)}% 0 0)`;
+      afterEl.style.clipPath = `inset(0 0 0 ${pct}%)`;
+    };
+
+    syncClip();
+    map.on('move', syncClip);
+    map.on('zoom', syncClip);
+    map.on('resize', syncClip);
+    return () => {
+      map.off('move', syncClip);
+      map.off('zoom', syncClip);
+      map.off('resize', syncClip);
+    };
+  }, [
+    isSplitCompare,
+    compareSplitPct,
+    rasterDataUrl,
+    baselineCompareDataUrl,
+    twin.bbox_wgs84,
+  ]);
 
   // Safe High-Ground Zones overlay (<25 mm runoff)
   const safeZoneDataUrl = useMemo(() => {
@@ -1055,7 +1140,39 @@ export function GeospatialMap({
       )}
     >
       {/* Map Canvas Container */}
-      <div ref={mapContainerRef} className="w-full h-full" />
+      <div ref={mapContainerRef} className="w-full h-full relative z-0" />
+
+      {/* Synchronized Before / After Split Curtain Overlay (above Leaflet overlayPane 400, below popups 700) */}
+      {isSplitCompare && (
+        <div className="pointer-events-none absolute inset-0 z-[500]">
+          <div
+            className="absolute top-0 bottom-0 w-0.5 bg-[#0F172A] shadow-[0_0_0_1px_rgba(255,255,255,0.9)]"
+            style={{ left: `${compareSplitPct}%` }}
+          >
+            <div className="absolute top-12 -translate-x-1/2 px-2.5 py-1 rounded bg-[#0F172A] text-white text-[11px] font-semibold whitespace-nowrap shadow-md border border-white/30">
+              Before | After
+            </div>
+          </div>
+          <div className="pointer-events-auto absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white/95 border border-[#CBD5E1] rounded-md px-3 py-1.5 shadow-md">
+            <span className="text-[11px] font-semibold text-[#DC2626] whitespace-nowrap">
+              Before ({compareSplitPct}%)
+            </span>
+            <input
+              type="range"
+              aria-label="Before and after flood comparison slider"
+              min={5}
+              max={95}
+              step={1}
+              value={compareSplitPct}
+              onChange={(e) => onCompareSplitChange?.(Number(e.target.value))}
+              className="w-28 sm:w-40 accent-[#0F766E] cursor-pointer"
+            />
+            <span className="text-[11px] font-semibold text-[#0F766E] whitespace-nowrap">
+              After ({100 - compareSplitPct}%)
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Graceful fallback indicator when external basemap tiles fail */}
       {tileErrorNotice && basemap !== 'tactical_grid' && (

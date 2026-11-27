@@ -72,6 +72,7 @@ interface FloodForgeContextValue {
   twin: TwinGrid;
 
   weather: WeatherBundle;
+  hasLoadedInitialWeather: boolean;
   isSyncingWeather: boolean;
   refreshWeather: () => Promise<void>;
   selectedOutlookDay: number | null;
@@ -106,6 +107,8 @@ interface FloodForgeContextValue {
   optResult: OptimizationResult | null;
   isOptimizing: boolean;
   isAutoSyncingOpt: boolean;
+  isOptStale: boolean;
+  optError: string | null;
   optProgressStage: string;
   runOptimization: (overrideConfig?: OptimizationConfig) => Promise<void>;
 
@@ -184,7 +187,8 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     operationalMode === 'demo_2001' && historic2001Weather.forecast24hMm >= 250
       ? 150
       : 50;
-  const [isSyncingWeather, setIsSyncingWeather] = useState(false);
+  const [hasLoadedInitialWeather, setHasLoadedInitialWeather] = useState(false);
+  const [isSyncingWeather, setIsSyncingWeather] = useState(true);
   const [selectedOutlookDay, setSelectedOutlookDay] = useState<number | null>(null);
   const [monsoonStressMode, setMonsoonStressMode] = useState(false);
   const weather = useMemo<WeatherBundle>(
@@ -370,6 +374,7 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
       ]);
       if (ctrl.signal.aborted || reqSeq !== weatherSeqRef.current) return;
       setLiveWeather(bundle);
+      setHasLoadedInitialWeather(true);
       if (bundle.source === 'OPEN_METEO_LIVE') {
         addEvent(
           'WEATHER',
@@ -434,6 +439,7 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
         const bundle = await fetchNullahLaiWeather(false, ctrl.signal);
         if (!active || reqSeq !== weatherSeqRef.current) return;
         setLiveWeather(bundle);
+      setHasLoadedInitialWeather(true);
         addEvent(
           'WEATHER',
           bundle.forecastState === 'verified' ? 'success' : 'warning',
@@ -447,6 +453,7 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
       } finally {
         if (active && reqSeq === weatherSeqRef.current) {
           setIsSyncingWeather(false);
+          setHasLoadedInitialWeather(true);
         }
       }
     })();
@@ -456,8 +463,9 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     };
   }, [addEvent]);
 
-  // Debounced backend health & forecast synchronization when apiUrl changes
+  // Debounced backend health & forecast synchronization when API mode or VITE_API_BASE_URL is configured
   useEffect(() => {
+    if (engineMode !== 'api' && !import.meta.env.VITE_API_BASE_URL) return;
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
       syncBackendTelemetry(ctrl.signal).then((res) => {
@@ -474,7 +482,7 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [syncBackendTelemetry, addEvent]);
+  }, [engineMode, syncBackendTelemetry, addEvent]);
 
   // Genuine active-session telemetry polling (every 15 min while tab is visible in live_ops)
   useEffect(() => {
@@ -575,8 +583,8 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
 
   // Mitigation Optimizer & Equity Audit (defined before mode scenario wiring)
   const [optConfig, setOptConfig] = useState<OptimizationConfig>(DEFAULT_OPT_CONFIG);
-  const [optResult, setOptResult] = useState<OptimizationResult | null>(() =>
-    runPortfolioOptimizationLocal(
+  const [optResult, setOptResult] = useState<OptimizationResult | null>(() => ({
+    ...runPortfolioOptimizationLocal(
       buildNullahLaiTwin('nullah_lai_basin', 42),
       {
         rainfall_mm_per_hr: 0.5,
@@ -588,10 +596,14 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
         tag: 'LIVE_FORECAST',
       },
       DEFAULT_OPT_CONFIG
-    )
-  );
+    ),
+    engineSource: 'local_d8',
+    provenance: 'SIMULATED',
+  }));
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isAutoSyncingOpt, setIsAutoSyncingOpt] = useState(false);
+  const [isOptStale, setIsOptStale] = useState(false);
+  const [optError, setOptError] = useState<string | null>(null);
   const [optProgressStage, setOptProgressStage] = useState('');
   const manualOptSeqRef = useRef(0);
   const manualOptAbortRef = useRef<AbortController | null>(null);
@@ -630,7 +642,9 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
         if (monsoonStressMode) {
           fetchNullahLaiWeather(false).then((b) => setLiveWeather(b));
         }
-        void syncBackendTelemetry();
+        if (engineMode === 'api' || import.meta.env.VITE_API_BASE_URL) {
+          void syncBackendTelemetry();
+        }
         addEvent(
           'SYSTEM',
           'info',
@@ -657,7 +671,10 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
       const targetDay = weather.outlook30d.find((d) => d.dayOffset === selectedOutlookDay);
       if (targetDay) {
         return {
-          ...buildScenarioForOutlookDay(targetDay, weather, optConfig.budgetPkr),
+          ...buildScenarioForOutlookDay(targetDay, weather, optConfig.budgetPkr, {
+            operationalMode,
+            monsoonStressMode,
+          }),
           threshold_mm: activeThresholdMm,
         };
       }
@@ -682,6 +699,8 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
       };
     }
     if (
+      engineMode === 'api' &&
+      apiHealthy &&
       backendForecast &&
       !monsoonStressMode &&
       backendForecast.forecast_status !== 'unavailable' &&
@@ -706,6 +725,8 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     optConfig.budgetPkr,
     selectedOutlookDay,
     weather,
+    engineMode,
+    apiHealthy,
     backendForecast,
     monsoonStressMode,
     forecastHorizon,
@@ -917,7 +938,14 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     if (studyAreaId === 'nullah_lai_basin' && !realBasinTwin) return;
-    if (optConfig.enabledTypes.length === 0) return;
+    if (optConfig.enabledTypes.length === 0) {
+      autoOptAbortRef.current?.abort();
+      ++autoOptSeqRef.current;
+      setIsAutoSyncingOpt(false);
+      setIsOptStale(true);
+      setOptError('Select at least one intervention type to update mitigation metrics.');
+      return;
+    }
 
     const effectiveMode: EngineMode =
       engineMode === 'api' &&
@@ -936,6 +964,8 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
       ++autoOptSeqRef.current;
       ++appliedOptEpochRef.current;
       setOptResult(cached);
+      setIsOptStale(false);
+      setOptError(null);
       setIsAutoSyncingOpt(false);
       return;
     }
@@ -947,9 +977,12 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     const reqId = ++autoOptSeqRef.current;
     const startEpoch = ++appliedOptEpochRef.current;
 
+    setIsOptStale(true);
+    setOptError(null);
+    setIsAutoSyncingOpt(true);
+
     const timer = setTimeout(() => {
       if (!active || reqId !== autoOptSeqRef.current) return;
-      setIsAutoSyncingOpt(true);
       executeOptimization(
         effectiveMode,
         apiUrl,
@@ -965,10 +998,15 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
           if (startEpoch >= appliedOptEpochRef.current) {
             appliedOptEpochRef.current = startEpoch;
             setOptResult(res.result);
+            setIsOptStale(false);
+            setOptError(null);
           }
         })
-        .catch(() => {
-          // Ignore aborted in-flight optimizations
+        .catch((err) => {
+          if (active && !(abortCtrl.signal.aborted || (err instanceof DOMException && err.name === 'AbortError'))) {
+            setIsOptStale(true);
+            setOptError(err instanceof Error ? err.message : 'Optimization request failed.');
+          }
         })
         .finally(() => {
           if (reqId === autoOptSeqRef.current) {
@@ -1010,6 +1048,8 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     async (overrideConfig?: OptimizationConfig) => {
       const cfg = overrideConfig ?? optConfig;
       if (cfg.enabledTypes.length === 0) {
+        setIsOptStale(true);
+        setOptError('Select at least one intervention type before optimizing.');
         pushToast(
           'Validation Error',
           'Select at least one intervention type before optimizing.',
@@ -1026,6 +1066,8 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
       const runEpoch = ++appliedOptEpochRef.current;
 
       setIsOptimizing(true);
+      setIsOptStale(true);
+      setOptError(null);
       setOptProgressStage('Evaluating D8 screening & multi-budget Pareto frontier...');
 
       try {
@@ -1046,6 +1088,8 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
         if (runEpoch >= appliedOptEpochRef.current) {
           appliedOptEpochRef.current = runEpoch;
           setOptResult(result);
+          setIsOptStale(false);
+          setOptError(null);
         }
 
         const cEnabledKey = [...cfg.enabledTypes].sort().join(',');
@@ -1073,7 +1117,10 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
         );
       } catch (err) {
         if (!(ctrl.signal.aborted || (err instanceof DOMException && err.name === 'AbortError'))) {
-          pushToast('Optimization Failed', 'Unable to complete optimization run.', 'warning');
+          setIsOptStale(true);
+          const msg = err instanceof Error ? err.message : 'Unable to complete optimization run.';
+          setOptError(msg);
+          pushToast('Optimization Failed', msg, 'warning');
         }
       } finally {
         if (reqId === manualOptSeqRef.current) {
@@ -1148,6 +1195,7 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     setForecastHorizon,
     twin,
     weather,
+    hasLoadedInitialWeather,
     isSyncingWeather,
     refreshWeather,
     selectedOutlookDay,
@@ -1177,6 +1225,8 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     optResult,
     isOptimizing,
     isAutoSyncingOpt,
+    isOptStale,
+    optError,
     optProgressStage,
     runOptimization,
     monitoringStations,

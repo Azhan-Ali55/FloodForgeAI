@@ -3,8 +3,8 @@ import {
   computeWeightedReductionPct,
   computeZoneEquityAudit,
   normalizeWeights,
-  runPortfolioOptimizationLocal,
 } from '../engine/optimizer';
+import { runPortfolioOptimizationAsync } from '../workers/optimizerWorkerClient';
 import { cellToLatLon, PILOT_CONFIG } from '../engine/pilotConfig';
 import { runScenarioLocal } from '../engine/simulator';
 import type {
@@ -142,7 +142,17 @@ export async function executeOptimization(
       dryCheck.metrics.population_exposed === 0
     ) {
       return {
-        result: runPortfolioOptimizationLocal(twin, scenario, config, officialAgencyOverride),
+        result: {
+          ...(await runPortfolioOptimizationAsync(
+            twin,
+            scenario,
+            config,
+            officialAgencyOverride,
+            signal
+          )),
+          engineSource: 'local_d8',
+          provenance: 'SIMULATED',
+        },
         usedFallback: false,
       };
     }
@@ -151,7 +161,17 @@ export async function executeOptimization(
   // Fallback to local engine if API is unconfigured, offline mode is chosen, or custom weighted objectives are active
   if (mode === 'local' || !apiUrl.trim() || !isDefaultWeights) {
     return {
-      result: runPortfolioOptimizationLocal(twin, scenario, config, officialAgencyOverride),
+      result: {
+        ...(await runPortfolioOptimizationAsync(
+          twin,
+          scenario,
+          config,
+          officialAgencyOverride,
+          signal
+        )),
+        engineSource: 'local_d8',
+        provenance: 'SIMULATED',
+      },
       usedFallback: false,
     };
   }
@@ -363,7 +383,13 @@ export async function executeOptimization(
     if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
       throw err;
     }
-    const fallbackResult = runPortfolioOptimizationLocal(twin, scenario, config, officialAgencyOverride);
+    const fallbackResult = await runPortfolioOptimizationAsync(
+      twin,
+      scenario,
+      config,
+      officialAgencyOverride,
+      signal
+    );
     return {
       result: {
         ...fallbackResult,

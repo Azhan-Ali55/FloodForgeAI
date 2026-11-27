@@ -183,10 +183,12 @@ def test_cors_restricts_unknown_origin():
 
 
 def test_forecast_aligns_current_pkt_hour_and_handles_missing_and_outage():
-    now_pkt = datetime.now(PKT_TZ).strftime("%Y-%m-%dT%H:00")
+    now_dt = datetime.now(PKT_TZ)
+    now_pkt = now_dt.strftime("%Y-%m-%dT%H:00")
+    next_pkt = (now_dt + timedelta(hours=1)).strftime("%Y-%m-%dT%H:00")
     fake_payload = {
         "hourly": {
-            "time": ["2026-01-01T00:00", now_pkt, "2026-01-01T23:00"],
+            "time": ["2026-01-01T00:00", now_pkt, next_pkt],
             "precipitation": [0.0, 2.5, 0.0],
             "soil_moisture_0_to_1cm": [0.12, None, 0.35],
         }
@@ -232,6 +234,76 @@ def test_forecast_aligns_current_pkt_hour_and_handles_missing_and_outage():
         assert body_outage["detail"]["error_category"] == "weather_provider_unavailable"
 
 
+def test_forecast_coverage_continuity_gaps_and_malformed_soil_moisture():
+    now_dt = datetime.now(PKT_TZ).replace(minute=0, second=0, microsecond=0)
+
+    class _MockResp:
+        status = 200
+
+        def __init__(self, payload_bytes: bytes):
+            self._bytes = payload_bytes
+
+        def read(self):
+            return self._bytes
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    # 1. A 24h response must NOT claim 100% 72-hour verified coverage
+    times_24 = [(now_dt + timedelta(hours=h)).strftime("%Y-%m-%dT%H:00") for h in range(24)]
+    payload_24 = {
+        "hourly": {
+            "time": times_24,
+            "precipitation": [1.0] * 24,
+            "soil_moisture_0_to_1cm": ["bad-value"] + [0.22] * 23,
+        }
+    }
+    with patch("floodforge.api.urlopen", return_value=_MockResp(json.dumps(payload_24).encode())):
+        status, _, body24 = _asgi_request("GET", "/api/forecast")
+        assert status == 200
+        assert body24["coverage_pct"] < 50.0
+        assert body24["horizon_coverage"]["24h"] == 100.0
+        assert body24["horizon_coverage"]["72h"] < 50.0
+        assert body24["forecast_status"] != "verified"
+        assert body24["forecast_status"] == "partial"
+        # Malformed soil moisture string handled cleanly without HTTP 500
+        assert body24["antecedent_wetness"] == "unavailable"
+
+    # 2. Missing hour gap must expand to None rather than compressing separate pulses into 6h window
+    gap_times = [
+        (now_dt + timedelta(hours=h)).strftime("%Y-%m-%dT%H:00")
+        for h in [0, 1, 2, 10, 11, 12]
+    ]
+    gap_payload = {
+        "hourly": {
+            "time": gap_times,
+            "precipitation": [10.0, 10.0, 10.0, 20.0, 20.0, 20.0],
+            "soil_moisture_0_to_1cm": [0.25] * 6,
+        }
+    }
+    with patch("floodforge.api.urlopen", return_value=_MockResp(json.dumps(gap_payload).encode())):
+        status, _, gap_body = _asgi_request("GET", "/api/forecast")
+        assert status == 200
+        # Because hours 3..9 are expanded as None, max rolling 6h is 60.0 mm (hours 10..12), NOT 90.0 mm
+        assert gap_body["peak_6h_total_mm"] == pytest.approx(60.0)
+        assert None in gap_body["hourly_precipitation_mm"]
+
+    # 3. Duplicate / non-chronological timestamps rejected cleanly (no HTTP 500)
+    dup_payload = {
+        "hourly": {
+            "time": [now_dt.strftime("%Y-%m-%dT%H:00"), now_dt.strftime("%Y-%m-%dT%H:00")],
+            "precipitation": [1.0, 2.0],
+            "soil_moisture_0_to_1cm": [0.2, 0.2],
+        }
+    }
+    with patch("floodforge.api.urlopen", return_value=_MockResp(json.dumps(dup_payload).encode())):
+        status, _, _ = _asgi_request("GET", "/api/forecast")
+        assert status == 502
+
+
 def test_loader_rejects_corrupt_or_missing_rasters(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_clipped_twin(clipped_dir=tmp_path / "does_not_exist")
@@ -254,8 +326,10 @@ def test_scenario_uncertainty_factor_scales_linearly():
 def test_audit_case_a_elapsed_hours_excluded_and_expired_or_null_rejected():
     """TEST A: At 18:00 PKT with 300mm elapsed earlier and 0mm remaining, future peak must be 0."""
     fixed_1800 = datetime(2026, 7, 23, 18, 15, tzinfo=PKT_TZ)
-    times = [f"2026-07-23T{h:02d}:00" for h in range(24)] + [
-        f"2026-07-24T{h:02d}:00" for h in range(24)
+    times = [
+        f"2026-07-{23 + day:02d}T{h:02d}:00"
+        for day in range(4)
+        for h in range(24)
     ]
     # Hours 00:00..17:00 sum to 300.0 mm; all remaining forecast hours (18:00 onward) are 0.0 mm
     precip = [16.0] * 17 + [28.0] + [0.0] * (len(times) - 18)

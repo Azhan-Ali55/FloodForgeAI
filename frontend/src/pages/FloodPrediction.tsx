@@ -78,7 +78,11 @@ const STORM_PRESETS: Array<{
   },
 ];
 
-export function FloodPrediction() {
+export function FloodPrediction({
+  defaultFocus = 'forecast',
+}: {
+  defaultFocus?: 'forecast' | 'simulation';
+} = {}) {
   const {
     weather,
     forecastHorizon,
@@ -101,8 +105,8 @@ export function FloodPrediction() {
       weather.hourlyForecast.slice(0, forecastHorizon).map((h) => ({
         label: `+${h.hourOffset}h`,
         fullTime: h.label,
-        precipitationMm: h.precipitationMm,
-        probabilityPct: h.probabilityPct,
+        precipitationMm: h.precipitationMm ?? 0,
+        probabilityPct: h.probabilityPct ?? 0,
       })),
     [weather.hourlyForecast, forecastHorizon]
   );
@@ -209,7 +213,11 @@ export function FloodPrediction() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Operational Flood Prediction & Cloudburst Simulator"
+        title={
+          defaultFocus === 'simulation'
+            ? 'Cloudburst & Scenario Stress-Test Simulator'
+            : 'Flood Forecast & Rainfall Telemetry'
+        }
         subtitle="Combine meteorological forecasts, soil moisture, and D8 cloudburst stress testing."
         rightSlot={
           <>
@@ -225,17 +233,17 @@ export function FloodPrediction() {
           title="Hourly Rainfall Forecast & Probability"
           className="xl:col-span-8"
           rightSlot={
-            <div className="flex items-center rounded-sm bg-[#244D8F] p-0.5 text-[10px]">
+            <div className="flex items-center rounded-md bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 text-xs">
               {([24, 48, 72] as ForecastHorizon[]).map((h) => (
                 <button
                   key={h}
                   type="button"
                   onClick={() => setForecastHorizon(h)}
                   className={cn(
-                    'px-2.5 py-0.5 rounded-sm font-mono font-semibold transition-colors cursor-pointer',
+                    'px-2.5 py-0.5 rounded font-mono font-medium transition-colors cursor-pointer',
                     forecastHorizon === h
-                      ? 'bg-white text-[#173C79]'
-                      : 'text-white/85 hover:text-white'
+                      ? 'bg-[#FFFFFF] text-[#0F172A] shadow-2xs border border-[#CBD5E1]'
+                      : 'text-[#64748B] hover:text-[#0F172A] border border-transparent'
                   )}
                 >
                   {h}h
@@ -251,13 +259,21 @@ export function FloodPrediction() {
                 {(() => {
                   const slice = weather.hourlyForecast.slice(0, forecastHorizon);
                   let best = 0;
-                  for (let i = 0; i <= Math.max(0, slice.length - 6); i++) {
+                  let hasValid = false;
+                  for (let i = 0; i <= Math.max(0, slice.length - 1); i++) {
+                    const end = Math.min(slice.length, i + 6);
                     let s = 0;
-                    for (let j = 0; j < 6 && i + j < slice.length; j++) s += slice[i + j].precipitationMm;
+                    for (let j = i; j < end; j++) {
+                      const p = slice[j].precipitationMm;
+                      if (p !== null && Number.isFinite(p)) {
+                        s += p;
+                        hasValid = true;
+                      }
+                    }
                     if (s > best) best = s;
                   }
-                  return best.toFixed(1);
-                })()} mm
+                  return hasValid ? `${best.toFixed(1)} mm` : 'Unavailable';
+                })()}
               </strong>{' '}
               · {forecastHorizon}h total:{' '}
               <strong className="font-mono text-[#26364A]">{horizonTotalMm.toFixed(1)} mm</strong> · Peak hourly:{' '}
@@ -335,7 +351,7 @@ export function FloodPrediction() {
           title="Antecedent Wetness & Soil Moisture"
           icon={<Droplets className="w-4 h-4" />}
           rightSlot={
-            <span className="text-[10px] font-mono text-white/90">
+            <span className="text-xs font-mono text-[#64748B]">
               API₇ = {weather.api7DayMm} mm
             </span>
           }
@@ -399,17 +415,17 @@ export function FloodPrediction() {
         icon={<CalendarDays className="w-4 h-4" />}
         rightSlot={
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-white/85">
-              30d Total: {weather.forecast30dMm} mm
+            <span className="text-xs font-mono text-[#64748B]">
+              {weather.outlook30d.length}d Total: {weather.forecast30dMm} mm
             </span>
             <button
               type="button"
               onClick={toggleMonsoonStressMode}
               className={cn(
-                'px-2 py-0.5 rounded-sm text-[10px] font-semibold border transition-colors cursor-pointer',
+                'px-2.5 py-1 rounded text-xs font-medium border transition-colors cursor-pointer',
                 monsoonStressMode
-                  ? 'bg-[#EF8735] border-[#EF8735] text-white'
-                  : 'bg-white/10 border-white/25 text-white hover:bg-white/20'
+                  ? 'bg-[#EA580C] border-[#EA580C] text-white'
+                  : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A] hover:bg-[#F1F5F9]'
               )}
             >
               {monsoonStressMode ? 'Exit Monsoon Test' : 'Test 30-Day Monsoon Surge'}
@@ -448,34 +464,38 @@ export function FloodPrediction() {
         <div className="h-44">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
-              data={weather.outlook30d}
+              data={weather.outlook30d.map((d) => ({
+                ...d,
+                chartRainMm: d.rainfallMm ?? 0,
+                chartP90Mm: d.p90RainfallMm ?? 0,
+              }))}
               onClick={(state) => {
                 const payload = (state as { activePayload?: Array<{ payload: typeof weather.outlook30d[number] }> })?.activePayload?.[0]?.payload;
-                if (payload) {
+                if (payload && payload.isAvailable) {
                   const s = buildScenarioForOutlookDay(payload, weather, simScenario.budget_pkr);
                   runCloudburstSimulation(s);
                 }
               }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#E6EAEF" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
               <XAxis
                 dataKey="dateLabel"
-                tick={{ fill: '#5A6A7E', fontSize: 10 }}
+                tick={{ fill: '#64748B', fontSize: 11 }}
                 interval={2}
               />
-              <YAxis tick={{ fill: '#5A6A7E', fontSize: 10 }} unit="mm" />
+              <YAxis tick={{ fill: '#64748B', fontSize: 11 }} unit="mm" />
               <Tooltip contentStyle={{ fontSize: 12, borderColor: '#CBD5E1' }} />
               <Bar
-                dataKey="rainfallMm"
+                dataKey="chartRainMm"
                 name="Daily Rain (mm)"
-                fill="#244D8F"
+                fill="#1D4ED8"
                 radius={[2, 2, 0, 0]}
               />
               <Line
                 type="monotone"
-                dataKey="p90RainfallMm"
+                dataKey="chartP90Mm"
                 name="P90 Ensemble Envelope (mm)"
-                stroke="#EF8735"
+                stroke="#EA580C"
                 strokeWidth={1.8}
                 dot={false}
               />
@@ -692,12 +712,12 @@ export function FloodPrediction() {
                     actions: preparednessActions,
                   })
                 }
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-white/15 hover:bg-white/25 border border-white/25 text-white text-[10px] font-semibold cursor-pointer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0F172A] text-xs font-medium cursor-pointer"
               >
-                <Download className="w-3 h-3" />
+                <Download className="w-3.5 h-3.5 text-[#0F766E]" />
                 Export Report
               </button>
-              <span className="text-[10px] font-mono text-white/85">
+              <span className="text-xs font-mono text-[#64748B]">
                 Runtime: {simActiveResult.runtime_ms} ms
               </span>
             </div>

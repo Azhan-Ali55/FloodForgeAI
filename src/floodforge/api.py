@@ -204,6 +204,80 @@ def _validate_portfolio_bounds(interventions: list[InterventionIn], rows: int, c
             )
 
 
+def _safe_optional_float(val: object, min_val: float | None = None, max_val: float | None = None) -> float | None:
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        num = float(val)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(num):
+        return None
+    if min_val is not None and num < min_val:
+        return None
+    if max_val is not None and num > max_val:
+        return None
+    return round(num, 3)
+
+
+def _parse_iso_pkt_naive(ts: object) -> datetime | None:
+    if not isinstance(ts, str) or not ts.strip():
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.strip())
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(PKT_TZ).replace(tzinfo=None)
+    return dt
+
+
+def _normalize_hourly_series(
+    raw_times: list,
+    raw_precip_all: list,
+    raw_soil_all: object,
+) -> tuple[list[str], list[float | None], list[float | None], int]:
+    """Validate strictly ascending non-duplicate timestamps and expand missing-hour gaps with None."""
+    count = min(len(raw_times), len(raw_precip_all))
+    soil_list = raw_soil_all if isinstance(raw_soil_all, list) else []
+
+    parsed_dts: list[datetime] = []
+    for i in range(count):
+        dt = _parse_iso_pkt_naive(raw_times[i])
+        if dt is None:
+            raise ValueError(f"Unparseable forecast timestamp at index {i}: {raw_times[i]!r}")
+        if parsed_dts and dt <= parsed_dts[-1]:
+            raise ValueError(
+                f"Duplicate or non-chronological timestamp at index {i}: {dt.isoformat()} <= {parsed_dts[-1].isoformat()}"
+            )
+        parsed_dts.append(dt)
+
+    norm_times: list[str] = []
+    norm_precip: list[float | None] = []
+    norm_soil: list[float | None] = []
+    gap_hours = 0
+
+    for i, dt in enumerate(parsed_dts):
+        if i > 0:
+            delta_hrs = (dt - parsed_dts[i - 1]).total_seconds() / 3600.0
+            if delta_hrs > 1.001:
+                skipped = int(round(delta_hrs)) - 1
+                # Insert explicit missing-hour slots instead of compressing across gaps
+                for g in range(1, min(skipped + 1, 72)):
+                    gap_dt = parsed_dts[i - 1] + timedelta(hours=g)
+                    norm_times.append(gap_dt.strftime("%Y-%m-%dT%H:%M"))
+                    norm_precip.append(None)
+                    norm_soil.append(None)
+                    gap_hours += 1
+
+        norm_times.append(dt.strftime("%Y-%m-%dT%H:%M"))
+        norm_precip.append(_safe_optional_float(raw_precip_all[i], min_val=0.0, max_val=1000.0))
+        soil_val = soil_list[i] if i < len(soil_list) else None
+        norm_soil.append(_safe_optional_float(soil_val, min_val=0.0, max_val=1.0))
+
+    return norm_times, norm_precip, norm_soil, gap_hours
+
+
 def _align_pkt_future_index(times: list[str], now_pkt: datetime | None = None) -> tuple[int, bool]:
     """Return (start_idx_of_current_or_future_hour, is_expired).
 
@@ -224,11 +298,8 @@ def _align_pkt_future_index(times: list[str], now_pkt: datetime | None = None) -
     best_future_idx: int | None = None
     best_future_diff = float("inf")
     for idx, t in enumerate(times):
-        try:
-            dt = datetime.fromisoformat(t)
-            if dt.tzinfo is not None:
-                dt = dt.astimezone(PKT_TZ).replace(tzinfo=None)
-        except ValueError:
+        dt = _parse_iso_pkt_naive(t)
+        if dt is None:
             continue
         diff = (dt - current_hour_naive).total_seconds()
         if diff >= 0 and diff < best_future_diff:
@@ -324,18 +395,9 @@ def get_open_meteo_forecast():
         raw_precip_all = hourly["precipitation"]
         if not isinstance(raw_times, list) or not isinstance(raw_precip_all, list) or not raw_times or not raw_precip_all:
             raise ValueError("Open-Meteo payload missing hourly precipitation series")
-        count = min(len(raw_times), len(raw_precip_all))
-        times: list[str] = [str(t) for t in raw_times[:count]]
-        precip_raw: list[float | None] = []
-        for x in raw_precip_all[:count]:
-            if x is None:
-                precip_raw.append(None)
-            else:
-                val = float(x)
-                if not math.isfinite(val) or val < 0:
-                    precip_raw.append(None)
-                else:
-                    precip_raw.append(round(val, 3))
+        times, precip_raw, soil_arr, gap_hours = _normalize_hourly_series(
+            raw_times, raw_precip_all, hourly.get("soil_moisture_0_to_1cm")
+        )
     except HTTPException:
         raise
     except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
@@ -346,7 +408,7 @@ def get_open_meteo_forecast():
                 "source": "unavailable",
                 "forecast_status": "unavailable",
                 "error_category": "weather_provider_unavailable",
-                "message": "Open-Meteo weather forecast unavailable; no synthetic forecast substituted.",
+                "message": "Open-Meteo weather forecast unavailable or malformed; no synthetic forecast substituted.",
             },
         ) from exc
 
@@ -364,6 +426,7 @@ def get_open_meteo_forecast():
 
     future_times = times[cur_idx : cur_idx + 72]
     future_precip_raw = precip_raw[cur_idx : cur_idx + 72]
+    future_soil = soil_arr[cur_idx : cur_idx + 72]
     valid_future_vals = [v for v in future_precip_raw if v is not None]
     if not valid_future_vals:
         raise HTTPException(
@@ -376,18 +439,18 @@ def get_open_meteo_forecast():
             },
         )
 
-    missing_future_hours = sum(1 for v in future_precip_raw if v is None)
-    coverage_pct = round((len(valid_future_vals) / max(1, len(future_precip_raw))) * 100.0, 1)
+    missing_future_hours = sum(1 for v in future_precip_raw if v is None) + max(0, 72 - len(future_precip_raw))
+    valid_24h = sum(1 for v in future_precip_raw[:24] if v is not None)
+    valid_48h = sum(1 for v in future_precip_raw[:48] if v is not None)
+    valid_72h = len(valid_future_vals)
+    coverage_24h = round((valid_24h / 24.0) * 100.0, 1)
+    coverage_48h = round((valid_48h / 48.0) * 100.0, 1)
+    coverage_72h = round((valid_72h / 72.0) * 100.0, 1)
     forecast_status = (
-        "verified" if missing_future_hours == 0 and len(future_precip_raw) >= 24 else "partial"
+        "verified"
+        if missing_future_hours == 0 and gap_hours == 0 and len(future_precip_raw) >= 72
+        else "partial"
     )
-
-    raw_soil = hourly.get("soil_moisture_0_to_1cm") or []
-    soil_arr: list[float | None] = [
-        round(float(x), 3) if x is not None and math.isfinite(float(x)) else None
-        for x in raw_soil[:count]
-    ]
-    future_soil = soil_arr[cur_idx : cur_idx + 72]
 
     soil_now: float | None = soil_arr[cur_idx] if cur_idx < len(soil_arr) else None
     if soil_now is None and future_soil:
@@ -407,23 +470,22 @@ def get_open_meteo_forecast():
     else:
         wetness = "dry"
 
-    # Strict future-only calculations (elapsed hours precip[:cur_idx] excluded)
-    future_precip_numeric = [v if v is not None else 0.0 for v in future_precip_raw]
-    future_24h_total = round(sum(future_precip_numeric[:24]), 1)
-    future_48h_total = round(sum(future_precip_numeric[:48]), 1)
-    future_72h_total = round(sum(future_precip_numeric), 1)
+    # Strict future-only calculations without compressing missing hourly gaps
+    future_24h_total = round(sum(v for v in future_precip_raw[:24] if v is not None), 1)
+    future_48h_total = round(sum(v for v in future_precip_raw[:48] if v is not None), 1)
+    future_72h_total = round(sum(valid_future_vals), 1)
     peak_1h = round(max(valid_future_vals), 1)
 
     best_6h = 0.0
     best_start_idx = 0
-    if len(future_precip_numeric) >= 6:
-        for i in range(len(future_precip_numeric) - 5):
-            win = sum(future_precip_numeric[i : i + 6])
+    if len(future_precip_raw) >= 6:
+        for i in range(len(future_precip_raw) - 5):
+            win = sum(v for v in future_precip_raw[i : i + 6] if v is not None)
             if win > best_6h:
                 best_6h = win
                 best_start_idx = i
     else:
-        best_6h = sum(future_precip_numeric)
+        best_6h = sum(valid_future_vals)
         best_start_idx = 0
 
     return {
@@ -432,8 +494,14 @@ def get_open_meteo_forecast():
         "provenance": "WEATHER_FORECAST",
         "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
         "aligned_pkt_time": future_times[0] if future_times else None,
-        "coverage_pct": coverage_pct,
+        "coverage_pct": coverage_72h,
+        "horizon_coverage": {
+            "24h": coverage_24h,
+            "48h": coverage_48h,
+            "72h": coverage_72h,
+        },
         "missing_future_hours": missing_future_hours,
+        "gap_hours_count": gap_hours,
         "hourly_time": future_times,
         "hourly_precipitation_mm": future_precip_raw,
         "hourly_soil_moisture_0_to_1cm": future_soil,

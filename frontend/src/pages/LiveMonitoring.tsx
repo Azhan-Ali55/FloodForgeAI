@@ -136,7 +136,7 @@ export function LiveMonitoring() {
         title="Nullah Lai Monitoring Stations & Hydrometric Nodes"
         icon={<MapPin className="w-4 h-4" />}
         rightSlot={
-          <span className="text-[10px] font-mono text-white/85">
+          <span className="text-xs font-mono text-[#64748B]">
             Updated: {weather.fetchedAtPkt}
           </span>
         }

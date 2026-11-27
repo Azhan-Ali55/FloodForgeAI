@@ -26,12 +26,12 @@ export function BudgetControlCard({
   const clamped = Math.min(300_000_000, Math.max(50_000_000, budgetPkr));
 
   return (
-    <div className={cn('p-3 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] space-y-2', className)}>
+    <div className={cn('p-3 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] space-y-2', className)}>
       <div className="flex items-center justify-between text-xs gap-2">
-        <label htmlFor={inputId} className="font-semibold text-[#173C79]">
+        <label htmlFor={inputId} className="font-semibold text-[#0F172A]">
           Budget Slider (PKR 50M → 300M)
         </label>
-        <span className="font-mono font-bold text-[#173C79]">
+        <span className="font-mono font-semibold text-[#0F172A]">
           {spentPkr !== undefined
             ? `PKR ${(spentPkr / 1_000_000).toFixed(2)}M / ${(budgetPkr / 1_000_000).toFixed(0)}M`
             : formatPKR(budgetPkr)}
@@ -47,7 +47,7 @@ export function BudgetControlCard({
         step={5_000_000}
         value={clamped}
         onChange={(e) => onBudgetChange(Number(e.target.value))}
-        className="w-full accent-[#173C79]"
+        className="w-full accent-[#0F766E] cursor-pointer"
       />
 
       <div className="flex items-center justify-between gap-1.5">
@@ -57,10 +57,10 @@ export function BudgetControlCard({
             type="button"
             onClick={() => onBudgetChange(preset)}
             className={cn(
-              'flex-1 py-1 rounded-xs text-[10px] font-mono font-semibold border transition-colors cursor-pointer',
+              'flex-1 py-1 rounded text-[11px] font-mono font-semibold border transition-colors cursor-pointer',
               budgetPkr === preset
-                ? 'bg-[#173C79] border-[#173C79] text-white'
-                : 'bg-white border-[#D6DCE4] text-[#5A6A7E] hover:border-[#173C79]'
+                ? 'bg-[#0F172A] border-[#0F172A] text-white'
+                : 'bg-white border-[#CBD5E1] text-[#475569] hover:border-[#0F172A]'
             )}
           >
             {preset / 1_000_000}M

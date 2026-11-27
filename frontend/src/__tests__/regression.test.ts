@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import commandCenterSrc from '../pages/CommandCenter.tsx?raw';
+import mitigationCompSrc from '../components/dashboard/MitigationComparisonPanel.tsx?raw';
 import mapSrc from '../components/maps/GeospatialMap.tsx?raw';
 import realTwinJsonText from '../../public/real_twin_200x200.json?raw';
 import { buildNullahLaiTwin } from '../engine/nullahLaiTwin';
@@ -7,6 +9,7 @@ import { cellToLatLon, PILOT_CONFIG } from '../engine/pilotConfig';
 import { runScenarioLocal } from '../engine/simulator';
 import {
   buildForecastScenario,
+  buildScenarioForOutlookDay,
   buildScenarioFromBackendForecast,
   validateBackendForecastResponse,
 } from '../services/forecastService';
@@ -16,6 +19,7 @@ import {
   fetchNullahLaiWeather,
   MAX_USABLE_CACHE_AGE_HOURS,
   parseOpenMeteoResponse,
+  realignCachedWeatherBundle,
 } from '../services/weatherService';
 import type { Scenario, TwinGrid } from '../types/floodforge';
 
@@ -427,5 +431,62 @@ describe('FloodForgeAI Frontend Regression Suite', () => {
     const dryRes = runScenarioLocal(twin, { ...storm, rainfall_mm_per_hr: 0, duration_hr: 1 }, { interventions: [] });
     expect(dryRes.metrics.exposed_area_km2).toBe(0);
     expect(dryRes.metrics.buildings_exposed).toBe(0);
+  });
+
+  it('preserves null precipitation, non-compressed rolling windows, cache realignment, and scenario provenance', () => {
+    const fixedNowMs = Date.UTC(2026, 7, 10, 5, 0, 0);
+    const floorSec = Math.floor(fixedNowMs / 3600_000) * 3600;
+
+    // Sparse array where hour index 1 & 2 are null and daily[1] has a date timestamp with null rainfall
+    const times = Array.from({ length: 48 }, (_, h) => floorSec + h * 3600);
+    const precip: Array<number | null> = Array.from({ length: 48 }, (_, h) =>
+      h === 0 ? 12 : h >= 1 && h <= 6 ? null : h >= 7 && h <= 9 ? 15 : 0
+    );
+    const dailyTimes = Array.from({ length: 16 }, (_, d) => floorSec + d * 86400);
+    const dailyRain: Array<number | null> = Array.from({ length: 16 }, (_, d) =>
+      d === 1 ? null : 5
+    );
+
+    const parsed = parseOpenMeteoResponse(
+      {
+        latitude: 33.64,
+        longitude: 73.06,
+        timezone: 'Asia/Karachi',
+        hourly: { time: times, precipitation: precip },
+        daily: { time: dailyTimes, precipitation_sum: dailyRain },
+      },
+      null,
+      fixedNowMs
+    );
+
+    // Missing precip must stay null rather than becoming 0
+    expect(parsed.hourlyForecast[1].precipitationMm).toBeNull();
+    // Day 2 has date timestamp but missing precipitation_sum -> unavailable & null rainfall
+    expect(parsed.outlook30d[1].isAvailable).toBe(false);
+    expect(parsed.outlook30d[1].rainfallMm).toBeNull();
+
+    // Rolling 6h window must NOT compress nulls out so 12 (h0) + 15*3 (h7..9) don't merge into 57 mm
+    const sc = buildForecastScenario(parsed, 24, 50_000_000);
+    expect(sc.rainfall_mm_per_hr).toBeCloseTo(45 / 6, 1);
+
+    // Cache realignment drops elapsed hours and updates aggregates cleanly
+    const realigned = realignCachedWeatherBundle(parsed, fixedNowMs + 7 * 3600_000);
+    expect(realigned).not.toBeNull();
+    expect(realigned?.hourlyForecast.length).toBe(41);
+    expect(realigned?.forecast24hMm).toBe(45);
+
+    // Historical/stress scenario provenance preserved when picking a calendar date in demo_2001
+    const histDayScenario = buildScenarioForOutlookDay(
+      parsed.outlook30d[0],
+      parsed,
+      50_000_000,
+      { operationalMode: 'demo_2001' }
+    );
+    expect(histDayScenario.tag).toBe('HYPOTHETICAL_STRESS_TEST');
+
+    // UI regression checks: no hardcoded Pareto ~230M label, and no Supporting Weather panel on CommandCenter
+    expect(mitigationCompSrc).not.toContain('230M');
+    expect(commandCenterSrc).not.toContain('Supporting Weather');
+    expect(commandCenterSrc).not.toContain('WeatherSummary');
   });
 });

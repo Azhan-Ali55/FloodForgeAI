@@ -68,7 +68,7 @@ export function renderRasterOverlayDataUrl(
   simResult: SimResult,
   scenario: Scenario,
   baselineResult?: SimResult,
-  viewMode: 'mitigated' | 'baseline' | 'delta' = 'mitigated'
+  viewMode: 'mitigated' | 'baseline' | 'delta' | 'compare' = 'mitigated'
 ): string {
   const { rows, cols, dem, population, buildings } = twin;
   const canvas = document.createElement('canvas');

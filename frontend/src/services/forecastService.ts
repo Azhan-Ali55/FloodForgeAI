@@ -61,20 +61,28 @@ export function buildScenarioFromBackendForecast(
 ): Scenario {
   let peak6hMm = Math.max(0, forecast.peak_6h_total_mm);
   if (Array.isArray(forecast.hourly_precipitation_mm) && forecast.hourly_precipitation_mm.length > 0) {
-    const sliced = forecast.hourly_precipitation_mm
-      .slice(0, horizon)
-      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0);
-    if (sliced.length > 0) {
-      let best = 0;
-      if (sliced.length >= 6) {
-        for (let i = 0; i <= sliced.length - 6; i++) {
-          let win = 0;
-          for (let j = 0; j < 6; j++) win += sliced[i + j];
-          if (win > best) best = win;
+    const sliced = forecast.hourly_precipitation_mm.slice(0, horizon);
+    let validHours = 0;
+    let best = 0;
+    for (let i = 0; i < sliced.length; i++) {
+      const end = Math.min(sliced.length, i + 6);
+      let winSum = 0;
+      let winValid = 0;
+      for (let j = i; j < end; j++) {
+        const v = sliced[j];
+        if (typeof v === 'number' && Number.isFinite(v) && v >= 0) {
+          winSum += v;
+          winValid++;
         }
-      } else {
-        best = sliced.reduce((a, b) => a + b, 0);
       }
+      if (typeof sliced[i] === 'number' && Number.isFinite(sliced[i] as number) && (sliced[i] as number) >= 0) {
+        validHours++;
+      }
+      if (winValid > 0 && winSum > best) {
+        best = winSum;
+      }
+    }
+    if (validHours > 0) {
       peak6hMm = best;
     }
   }
@@ -145,17 +153,26 @@ export function buildForecastScenario(
   mode: 'LIVE_FORECAST' | 'UNCERTAINTY_ENVELOPE' = 'LIVE_FORECAST'
 ): Scenario {
   const slice = weather.hourlyForecast.slice(0, horizon);
-  // Mode A rule: compute peak rolling 6-hour accumulation window conserving exact volume
+  const validCount = slice.filter(
+    (h) => h.precipitationMm !== null && Number.isFinite(h.precipitationMm)
+  ).length;
+  // Mode A rule: compute peak rolling 6-hour accumulation preserving positional timeline indices (do not compress missing hours)
   let peak6hMm = 0;
-  for (let i = 0; i <= Math.max(0, slice.length - 6); i++) {
+  for (let i = 0; i <= Math.max(0, slice.length - 1); i++) {
+    const end = Math.min(slice.length, i + 6);
     let win = 0;
-    for (let j = 0; j < 6 && i + j < slice.length; j++) {
-      win += slice[i + j].precipitationMm;
+    let winValid = 0;
+    for (let j = i; j < end; j++) {
+      const p = slice[j].precipitationMm;
+      if (p !== null && Number.isFinite(p) && p >= 0) {
+        win += p;
+        winValid++;
+      }
     }
-    if (win > peak6hMm) peak6hMm = win;
+    if (winValid > 0 && win > peak6hMm) peak6hMm = win;
   }
 
-  const isDry = peak6hMm < 0.2;
+  const isDry = validCount === 0 || peak6hMm < 0.2;
   const effectiveDuration = isDry ? 1 : 6;
   const effectiveIntensity = isDry ? 0 : Number((peak6hMm / 6).toFixed(2));
 
@@ -172,26 +189,36 @@ export function buildForecastScenario(
     uncertainty_factor: uncertaintyFactor,
     tag: mode,
     label:
-      mode === 'UNCERTAINTY_ENVELOPE'
-        ? `${horizon}h High-Rainfall Envelope (6h Peak)`
-        : `${horizon}h Forecast (Peak 6h Window)`,
+      validCount === 0
+        ? `${horizon}h Forecast Unavailable`
+        : mode === 'UNCERTAINTY_ENVELOPE'
+          ? `${horizon}h High-Rainfall Envelope (6h Peak)`
+          : `${horizon}h Forecast (Peak 6h Window)`,
   };
 }
 
 /**
- * Converts a selected day from the 30-Day Outlook into a 30m D8 screening Scenario,
- * preserving total convective storm volume without artificial minimum inflation.
+ * Converts a selected day from the calendar outlook into a 30m D8 screening Scenario,
+ * preserving total convective storm volume and historical/hypothetical scenario provenance.
  */
 export function buildScenarioForOutlookDay(
   day: OutlookDayPoint,
   weather: WeatherBundle,
-  budgetPkr: number
+  budgetPkr: number,
+  options?: { operationalMode?: 'live_ops' | 'demo_2001'; monsoonStressMode?: boolean }
 ): Scenario {
-  const rainDay = Math.max(0, day.rainfallMm);
+  const rainDay = day.isAvailable && day.rainfallMm !== null ? Math.max(0, day.rainfallMm) : 0;
   const isDry = rainDay < 0.2;
   // Convective storm window: concentrates ~72% of daily total into a 6h burst without volume inflation
   const effectiveIntensity = isDry ? 0 : Number(((rainDay * 0.72) / 6).toFixed(2));
   const durationHr = isDry ? 1 : 6;
+
+  const isHypothetical =
+    options?.operationalMode === 'demo_2001' ||
+    options?.monsoonStressMode === true ||
+    weather.source === 'SYNTHETIC_DEMO' ||
+    weather.outlookSource === 'HISTORICAL_2001_CLOUDBURST' ||
+    weather.outlookSource === 'MONSOON_STRESS_TEST';
 
   return {
     rainfall_mm_per_hr: effectiveIntensity,
@@ -199,7 +226,9 @@ export function buildScenarioForOutlookDay(
     budget_pkr: budgetPkr,
     antecedent_wetness: rainDay >= 60 ? 'wet' : deriveWetnessFromWeather(weather),
     uncertainty_factor: day.tier === 'ENSEMBLE_30D' ? 1.15 : 1.0,
-    tag: 'LIVE_FORECAST',
-    label: `Day +${day.dayOffset} (${day.dateLabel}) Outlook`,
+    tag: isHypothetical ? 'HYPOTHETICAL_STRESS_TEST' : 'LIVE_FORECAST',
+    label: isHypothetical
+      ? `Historical / Stress Day (${day.dateLabel})`
+      : `Day +${day.dayOffset} (${day.dateLabel}) Outlook`,
   };
 }

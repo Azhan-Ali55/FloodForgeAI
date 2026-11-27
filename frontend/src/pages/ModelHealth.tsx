@@ -16,9 +16,11 @@ export function ModelHealth() {
     modelDiagnostics,
     isSyncingWeather,
     refreshWeather,
-    engineMode,
-    apiHealthy,
+    optResult,
   } = useFloodForge();
+
+  const actualEngineLabel =
+    optResult?.engineSource === 'python_api' ? 'Python Backend Engine' : 'Local In-Browser Engine';
 
   return (
     <div className="space-y-4">
@@ -121,7 +123,7 @@ export function ModelHealth() {
           <AlertTriangle className="w-5 h-5 text-[#EF8735] flex-shrink-0 mt-0.5" />
           <div className="space-y-1 text-xs">
             <div className="font-bold text-[#8A6700]">
-              Planning Notice ({engineMode === 'api' && apiHealthy ? 'Server Active' : 'Local Screening'})
+              Planning Notice ({actualEngineLabel})
             </div>
             <p className="text-[#26364A] leading-relaxed">
               {modelDiagnostics.validationStatus} Results are designed for municipal investment planning and preparedness across Rawalpindi and Islamabad and must be cross-checked with official PMD and NDMA river-gauge advisories before public directives.

@@ -7,22 +7,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { activeToasts, dismissToast } = useFloodForge();
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F5F6F7] text-[#26364A]">
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A]">
       <TopBar />
 
-      {/* Municipal Authority & Scientific Screening Notice Strip */}
-      <div className="bg-[#F0F1F2] border-b border-[#D6DCE4] px-3 sm:px-5 py-1.5">
-        <div className="max-w-[1760px] mx-auto flex items-center justify-between gap-3 text-[11px] text-[#5A6A7E]">
+      {/* Screening Notice Strip */}
+      <div className="bg-[#FFFFFF] border-b border-[#E2E8F0] px-3 sm:px-5 py-1.5">
+        <div className="max-w-[1760px] mx-auto flex items-center justify-between gap-3 text-xs text-[#475569]">
           <div className="flex items-start sm:items-center gap-2 min-w-0">
-            <AlertTriangle className="w-3.5 h-3.5 text-[#EF8735] flex-shrink-0 mt-0.5 sm:mt-0" />
+            <AlertTriangle className="w-3.5 h-3.5 text-[#D97706] flex-shrink-0 mt-0.5 sm:mt-0" />
             <span className="leading-snug">
-              <strong className="text-[#173C79] font-semibold">
-                Municipal Decision-Support Portal:
+              <strong className="text-[#0F172A] font-semibold">
+                Screening Decision-Support Platform:
               </strong>{' '}
-              Nullah Lai basin flood screening portal. Cross-verify operational alerts with official PMD &amp; NDMA bulletins.
+              30 m basin runoff &amp; mitigation planning. Cross-verify operational alerts with official PMD &amp; NDMA bulletins.
             </span>
           </div>
-          <span className="hidden md:inline-block font-mono text-[10px] px-2 py-0.5 rounded-sm bg-white border border-[#D6DCE4] text-[#173C79] flex-shrink-0">
+          <span className="hidden md:inline-block font-mono text-[11px] px-2 py-0.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[#334155] flex-shrink-0">
             Rawalpindi–Islamabad Basin
           </span>
         </div>

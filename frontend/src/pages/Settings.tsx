@@ -49,10 +49,10 @@ export function Settings() {
         rightSlot={
           <span
             className={cn(
-              'flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-[10px] font-semibold',
+              'flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium border',
               apiHealthy
-                ? 'bg-[#55A85F] text-white'
-                : 'bg-white/15 text-white'
+                ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46]'
+                : 'bg-[#F1F5F9] border-[#E2E8F0] text-[#475569]'
             )}
           >
             {apiHealthy ? (
