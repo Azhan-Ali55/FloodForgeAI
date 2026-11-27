@@ -16,11 +16,11 @@ export const PILOT_CONFIG = {
       name: 'Nullah Lai Full Sub-Catchment',
       shortName: 'Nullah Lai Basin',
       region: 'Rawalpindi–Islamabad',
-      bbox_wgs84: { west: 73.028, south: 33.588, east: 73.088, north: 33.662 },
-      center: [33.625, 73.058] as [number, number],
+      bbox_wgs84: { west: 73.03, south: 33.61, east: 73.09, north: 33.67 },
+      center: [33.64, 73.06] as [number, number],
       defaultZoom: 13,
-      rows: 96,
-      cols: 96,
+      rows: 200,
+      cols: 200,
     },
     katarian_gawalmandi: {
       id: 'katarian_gawalmandi' as StudyAreaId,
@@ -60,10 +60,31 @@ export const PILOT_CONFIG = {
     api_decay_k: 0.85,
   },
   scenario_limits: {
-    rainfall_mm_per_hr: { min: 10, max: 160, default: 52, step: 2 },
-    duration_hr: { min: 1, max: 12, default: 3, step: 0.5 },
-    budget_pkr: { min: 10_000_000, max: 400_000_000, default: 100_000_000, step: 5_000_000 },
+    rainfall_mm_per_hr: { min: 5, max: 160, default: 52, step: 2 },
+    duration_hr: { min: 0.5, max: 24, default: 3, step: 0.5 },
+    budget_pkr: { min: 50_000_000, max: 300_000_000, default: 200_000_000, step: 5_000_000 },
   },
+  operational_modes: {
+    live_ops: {
+      id: 'live_ops' as const,
+      label: 'Live Operations',
+      shortLabel: 'Live Ops',
+      threshold_mm: 50,
+      description: 'Live weather telemetry & soil moisture wetness (50 mm flood cutoff).',
+    },
+    demo_2001: {
+      id: 'demo_2001' as const,
+      label: '2001 Emergency Demo',
+      shortLabel: '2001 Demo',
+      rainfall_mm_per_hr: 62,
+      duration_hr: 10,
+      total_mm: 620,
+      threshold_mm: 150,
+      description: 'July 23, 2001 Cloudburst (620 mm / 10 hr, 150 mm severe inundation cutoff).',
+    },
+  },
+  comparison_label: 'Moderate rainfall: 12% area reduction. Severe cloudburst: 39% area reduction.',
+  equity_pass_banner: '✅ Equity Pass: No downstream risk transfer.',
   runoff_coefficients: {
     10: 0.15, // Tree cover
     20: 0.25, // Shrubland
@@ -87,17 +108,17 @@ export const PILOT_CONFIG = {
       type: 'retention_pond' as InterventionType,
       label: 'Retention Pond',
       pluralLabel: 'Retention Ponds',
-      unitCostPkr: 7_500_000, // Municipal detention basin (placeholder BoQ)
+      unitCostPkr: 5_760_000, // 18,000 m³ @ 320 PKR/m³ (configs/pilot.yaml)
       defaultSize: 18_000,
       unit: 'm³',
       color: '#16B8D4',
-      description: 'Excavated urban detention basin capturing peak overland inflow upstream of choke points.',
+      description: 'Excavated 18,000 m³ urban detention basin capturing peak overland inflow upstream of choke points.',
     },
     permeable_surface: {
       type: 'permeable_surface' as InterventionType,
       label: 'Permeable Surface',
       pluralLabel: 'Permeable Surfaces',
-      unitCostPkr: 4_800_000, // ~2 ha ward-scale permeable block (placeholder BoQ)
+      unitCostPkr: 3_780_000, // 18,000 m² @ 210 PKR/m² (configs/pilot.yaml)
       defaultSize: 18_000,
       unit: 'm²',
       color: '#18B981',
@@ -107,7 +128,7 @@ export const PILOT_CONFIG = {
       type: 'drainage_upgrade' as InterventionType,
       label: 'Drainage Upgrade',
       pluralLabel: 'Drainage Upgrades',
-      unitCostPkr: 6_400_000, // Storm conduit rehabilitation (placeholder BoQ)
+      unitCostPkr: 4_800_000, // 12,000 m³/hr @ 400 PKR (configs/pilot.yaml)
       defaultSize: 12_000,
       unit: 'm³/hr',
       color: '#F59E0B',

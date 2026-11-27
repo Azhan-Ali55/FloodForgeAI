@@ -43,6 +43,7 @@ export function IntelligenceMap() {
     stations: true,
     interventions: true,
     neighborhoods: true,
+    safe_zones: false,
   });
 
   const [activeRaster, setActiveRaster] = useState<MapRasterLayer>('flood_risk');
@@ -53,7 +54,7 @@ export function IntelligenceMap() {
 
   const activeSim = optResult ? optResult.optimizedResult : simActiveResult;
   const baselineSim = optResult ? optResult.baselineResult : simBaselineResult;
-  const interventions = optResult?.allCandidates ?? [];
+  const interventions = optResult?.selectedPortfolio ?? [];
 
   const selectRasterLayer = (layer: MapRasterLayer) => {
     setActiveRaster(layer);
@@ -211,7 +212,7 @@ export function IntelligenceMap() {
           <div className="p-2.5 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] text-[10px] text-[#5A6A7E] leading-relaxed flex items-start gap-2">
             <Info className="w-3.5 h-3.5 text-[#173C79] flex-shrink-0 mt-0.5" />
             <span>
-              Outputs represent 30 m screening-level runoff proxies (EPSG:32643), not surveyed street-level flood depths.
+              Outputs represent 30 m screening-level runoff estimates for Nullah Lai Basin, not surveyed street-level flood depths.
             </span>
           </div>
         </MunicipalPanel>
@@ -281,7 +282,7 @@ export function IntelligenceMap() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[#5A6A7E]">EPSG:32643</span>
+                    <span className="text-[#5A6A7E]">Map Grid Coordinates</span>
                     <span className="font-mono text-[11px] text-[#173C79]">
                       {selectedFeature.utmCoords}
                     </span>

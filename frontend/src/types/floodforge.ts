@@ -20,6 +20,8 @@ export type MlMaturityTier =
   | 'TIER_2_CALIBRATED'
   | 'TIER_3_VALIDATED';
 
+export type OperationalMode = 'live_ops' | 'demo_2001';
+
 export type ForecastHorizon = 24 | 48 | 72;
 
 export type StudyAreaId =
@@ -33,10 +35,25 @@ export interface Scenario {
   rainfall_mm_per_hr: number;
   duration_hr: number;
   budget_pkr: number;
+  threshold_mm?: number;
   antecedent_wetness?: AntecedentWetnessLevel;
   uncertainty_factor?: number;
   tag: ScenarioTag;
   label?: string;
+}
+
+export interface BackendForecastSummary {
+  source: string;
+  soil_moisture_0_to_1cm: number;
+  antecedent_wetness: AntecedentWetnessLevel;
+  peak_6h_total_mm: number;
+  peak_6h_rate_mm_per_hr: number;
+  peak_6h_window_start: string | null;
+  total_72h_mm: number;
+  peak_1h_mm_per_hr: number;
+  hourly_time?: string[];
+  hourly_precipitation_mm?: number[];
+  hourly_soil_moisture_0_to_1cm?: number[];
 }
 
 export interface Intervention {
@@ -170,8 +187,38 @@ export interface DailyWeatherPoint {
   conditionLabel: string;
 }
 
+export interface OutlookDayPoint {
+  dayOffset: number; // 1..30
+  dateIso: string;
+  dateLabel: string;
+  rainfallMm: number;
+  p90RainfallMm: number;
+  probabilityPct: number;
+  minTempC: number | null;
+  maxTempC: number | null;
+  weatherCode: number | null;
+  conditionLabel: string;
+  tier: 'HIGH_PRECISION_5D' | 'MEDIUM_RANGE_16D' | 'ENSEMBLE_30D';
+  riskLevel: StationRiskLevel;
+}
+
+export interface EarliestFloodAlert {
+  dayOffset: number;
+  dateLabel: string;
+  rainfallMm: number;
+  probabilityPct: number;
+  riskLevel: StationRiskLevel;
+  summary: string;
+}
+
 export interface WeatherBundle {
   source: 'OPEN_METEO_LIVE' | 'LOCAL_CACHE_FALLBACK' | 'SYNTHETIC_DEMO';
+  outlookSource:
+    | 'OPEN_METEO_16D_ENSEMBLE'
+    | 'OPEN_METEO_16D_ONLY'
+    | 'MONSOON_STRESS_TEST'
+    | 'HISTORICAL_2001_CLOUDBURST'
+    | 'FALLBACK_DATA';
   isStale: boolean;
   cacheAgeHours: number;
   fetchedAtIso: string;
@@ -185,6 +232,8 @@ export interface WeatherBundle {
   forecast48hMm: number;
   forecast72hMm: number;
   forecast120hMm: number;
+  forecast16dMm: number;
+  forecast30dMm: number;
   peakHourlyMm: number;
   maxProbabilityPct: number;
   currentWeather: {
@@ -202,6 +251,8 @@ export interface WeatherBundle {
   };
   hourlyForecast: HourlyWeatherPoint[];
   dailyForecast5d: DailyWeatherPoint[];
+  outlook30d: OutlookDayPoint[];
+  earliestFloodAlert: EarliestFloodAlert | null;
   past7DaysDaily: Array<{ day: string; rainfallMm: number }>;
   validationStatus: 'VALIDATED' | 'INTERPOLATED_GAPS' | 'FALLBACK_DATA';
 }
@@ -300,6 +351,29 @@ export interface MapLayerVisibility {
   stations: boolean;
   interventions: boolean;
   neighborhoods: boolean;
+  safe_zones?: boolean;
+}
+
+export interface ZoneSafetyItem {
+  zoneId: number;
+  zoneName: string;
+  sector: 'Islamabad' | 'Rawalpindi';
+  exposedAreaKm2: number;
+  safeAreaKm2: number;
+  exposedBuildings: number;
+  exposedPopulation: number;
+  peakAccumulationMm: number;
+  meanElevationM: number;
+  status: 'SAFE' | 'MODERATE' | 'HIGH_RISK' | 'CRITICAL';
+}
+
+export interface AreaSafetySummary {
+  safeAreaKm2: number;
+  exposedAreaKm2: number;
+  mostAffectedZones: ZoneSafetyItem[];
+  safeZones: ZoneSafetyItem[];
+  affectedStations: MonitoringStation[];
+  safeStations: MonitoringStation[];
 }
 
 export type BasemapStyle = 'municipal_green' | 'osm' | 'satellite' | 'tactical_grid';
@@ -322,7 +396,7 @@ export interface MonitoringStation {
   rainfallMmHr: number | null;
   waterLevelM: number | null;
   modeledAccumulationMm: number;
-  waterTempC: number | null;
+  soilMoistureLabel: string;
   temperatureC: number | null;
   windSpeedKmh: number | null;
   humidityPct: number | null;

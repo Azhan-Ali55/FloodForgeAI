@@ -1,3 +1,4 @@
+import { formatSoilMoistureStatus } from '../services/forecastService';
 import { latLonToUtm43N } from './pilotConfig';
 import type {
   MonitoringStation,
@@ -46,6 +47,7 @@ export function buildMonitoringStations(
   const baseWindKmh = weather.currentWeather?.windSpeedKmh ?? null;
   const baseHumPct = weather.currentWeather?.humidityPct ?? null;
   const isFallback = weather.source !== 'OPEN_METEO_LIVE';
+  const soilMoisture = formatSoilMoistureStatus(weather);
 
   return twin.facility_records.map((fac, index) => {
     const idx = fac.row * twin.cols + fac.col;
@@ -88,7 +90,7 @@ export function buildMonitoringStations(
       rainfallMmHr,
       waterLevelM,
       modeledAccumulationMm: Number(acc.toFixed(1)),
-      waterTempC: null, // Not measured by Open-Meteo or D8 screening twin
+      soilMoistureLabel: soilMoisture.combinedLabel,
       temperatureC,
       windSpeedKmh: baseWindKmh,
       humidityPct: baseHumPct,
@@ -136,4 +138,79 @@ export function computeFloodRiskIndex(
   ).size;
 
   return { index, classification, affectedZonesEstimate };
+}
+
+export interface PreparednessActionItem {
+  agency: string;
+  priority: 'HIGH' | 'MEDIUM' | 'ROUTINE';
+  text: string;
+}
+
+/**
+ * Generates actionable agency-level preparedness steps (Mode A / Predictions)
+ * from the active simulation exposure mask, critical facilities, and road corridors.
+ */
+export function buildPreparednessActions(
+  twin: TwinGrid,
+  simResult: SimResult,
+  totalRainMm: number,
+  thresholdMm = 50
+): PreparednessActionItem[] {
+  const actions: PreparednessActionItem[] = [];
+  const exposedFacilities = twin.facility_records.filter((f) => {
+    const idx = f.row * twin.cols + f.col;
+    return simResult.exposed_mask[idx] === 1;
+  });
+
+  if (simResult.metrics.exposed_area_km2 <= 0.1 && simResult.alert_tier === 'Normal') {
+    actions.push({
+      agency: 'WASA & Rescue 1122',
+      priority: 'ROUTINE',
+      text: `Drainage flows within baseline capacity (${totalRainMm} mm scenario). Maintain routine nullah channel patrol and pump readiness.`,
+    });
+    return actions;
+  }
+
+  const hospitals = exposedFacilities.filter((f) => f.type === 'hospital');
+  const rescueNodes = exposedFacilities.filter((f) => f.type === 'rescue_1122');
+  const wasaNodes = exposedFacilities.filter((f) => f.type === 'wasa_station');
+
+  if (hospitals.length > 0) {
+    actions.push({
+      agency: 'Hospital Readiness',
+      priority: 'HIGH',
+      text: `Protect backup power & ground-floor triage at ${hospitals.map((h) => h.name).join(', ')} (within modeled >=${thresholdMm} mm risk mask).`,
+    });
+  }
+
+  if (rescueNodes.length > 0 || wasaNodes.length > 0) {
+    const names = [...wasaNodes, ...rescueNodes].map((n) => n.name).join(', ');
+    actions.push({
+      agency: 'Rescue 1122 & WASA',
+      priority: 'HIGH',
+      text: `Clear storm drains, verify dewatering pumps, and pre-position Rescue 1122 boats near ${names}.`,
+    });
+  } else {
+    actions.push({
+      agency: 'Rescue 1122 & WASA',
+      priority: simResult.alert_tier === 'Watch' || simResult.alert_tier === 'Warning' || simResult.alert_tier === 'Emergency' ? 'HIGH' : 'MEDIUM',
+      text: 'Pre-stage Rescue 1122 boats at Katarian Bridge and clear storm drains across Gawalmandi & Arya Mohallah.',
+    });
+  }
+
+  if (simResult.metrics.road_segments_exposed > 0) {
+    actions.push({
+      agency: 'Traffic & Sector Police',
+      priority: 'MEDIUM',
+      text: `Issue pre-storm traffic diversion advisory for ${simResult.metrics.road_segments_exposed} modeled flood-exposed arterial corridors and low-lying crossings.`,
+    });
+  }
+
+  actions.push({
+    agency: 'PMD / NDMA Verification',
+    priority: 'MEDIUM',
+    text: `Screening scenario (${totalRainMm} mm total) estimates ${simResult.metrics.exposed_area_km2.toFixed(2)} km² exposed — cross-verify with official PMD & NDMA bulletins before public directives.`,
+  });
+
+  return actions;
 }

@@ -4,7 +4,6 @@ import {
   ArrowDownRight,
   Building2,
   CheckCircle2,
-  Info,
   Route,
   Scale,
   ShieldAlert,
@@ -82,26 +81,23 @@ export function EquityImpact() {
     );
   }
 
-  const equityBanner = {
-    NO_RISK_TRANSFER: {
-      title: 'No Modeled Risk Transfer Detected',
-      desc: 'No neighborhood ward experienced a modeled increase in flooded area beyond the 5% risk-transfer tolerance threshold.',
-      icon: CheckCircle2,
-      cls: 'bg-[#EDF7EE] border-[#55A85F] text-[#2F6F37]',
-    },
-    RISK_TRANSFER_CONCERN: {
-      title: 'Risk-Transfer Concern Detected',
-      desc: 'One or more downstream wards show increased modeled exposure after intervention placement. Review drainage discharge routing before approval.',
-      icon: AlertTriangle,
-      cls: 'bg-[#FBEBEB] border-[#D94343] text-[#A12323]',
-    },
-    ADDITIONAL_ANALYSIS_REQUIRED: {
-      title: 'Additional Analysis Required',
-      desc: 'Selected interventions produced minimal ward-level change across the 30 m screening mask. Evaluate larger storage or upstream catchments.',
-      icon: Info,
-      cls: 'bg-[#FEF9E7] border-[#E0B422] text-[#8A6700]',
-    },
-  }[optResult.equityStatus];
+  const isEquityPass =
+    optResult.equityStatus !== 'RISK_TRANSFER_CONCERN' &&
+    !(optResult.optimizedResult.risk_transfer?.flagged);
+
+  const equityBanner = isEquityPass
+    ? {
+        title: '✅ Equity Pass: No downstream risk transfer.',
+        desc: 'All Rawalpindi & Islamabad basin wards pass downstream equity limits (<=2% downstream building risk tolerance).',
+        icon: CheckCircle2,
+        cls: 'bg-[#EDF7EE] border-[#55A85F] text-[#2F6F37]',
+      }
+    : {
+        title: 'Risk-Transfer Concern Detected',
+        desc: 'Downstream Rawalpindi exposed buildings increased above the 2% equity threshold after intervention placement. Review drainage discharge routing before approval.',
+        icon: AlertTriangle,
+        cls: 'bg-[#FBEBEB] border-[#D94343] text-[#A12323]',
+      };
 
   const BannerIcon = equityBanner.icon;
 
@@ -118,7 +114,7 @@ export function EquityImpact() {
         </div>
         <div className="flex items-center gap-2 text-xs font-mono text-[#173C79]">
           <Scale className="w-4 h-4" />
-          <span>12 Basin Wards Audited</span>
+          <span>{optResult.zoneEquityRows.length} Basin Zones Audited</span>
         </div>
       </div>
 
@@ -241,7 +237,7 @@ export function EquityImpact() {
               A reduction in total basin flooded area does <strong>not</strong> automatically verify social equity. Drainage upgrades in upstream Islamabad sectors can accelerate peak discharge into low-income downstream Rawalpindi wards (such as Dhoke Hassu, Ratta Amral, and Gawalmandi).
             </p>
             <p className="text-[#5A6A7E]">
-              FloodForgeAI audits every ward independently and penalizes portfolios that transfer flood risk beyond a 5% tolerance threshold.
+              FloodForgeAI audits every zone independently and flags portfolios that transfer flood risk beyond a 2% downstream building tolerance threshold.
             </p>
           </div>
 

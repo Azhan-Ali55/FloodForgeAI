@@ -1,13 +1,16 @@
 import type {
   AlertTier,
   AntecedentWetnessLevel,
+  AreaSafetySummary,
   ExposureMetrics,
   HotspotItem,
+  MonitoringStation,
   Portfolio,
   RiskTransferReport,
   Scenario,
   SimResult,
   TwinGrid,
+  ZoneSafetyItem,
 } from '../types/floodforge';
 import { cellToLatLon, PILOT_CONFIG } from './pilotConfig';
 import { formatPktTime } from '../utils/formatters';
@@ -27,21 +30,26 @@ interface RoutingCache {
   key: string;
   sortedOrder: Int32Array;
   downstreamIdx: Int32Array;
-  lownessFactor: Float64Array;
+  routeFraction: Float64Array;
 }
 
 const routingCacheMap = new Map<string, RoutingCache>();
 
 function getFlowRouting(twin: TwinGrid): RoutingCache {
-  const key = `${twin.studyAreaId}:${twin.seed}:${twin.rows}x${twin.cols}`;
+  const { rows, cols, dem } = twin;
+  const n = rows * cols;
+  let demSig = 2166136261;
+  for (let i = 0; i < n; i += 7) {
+    demSig ^= Math.round((dem[i] ?? 0) * 100);
+    demSig = Math.imul(demSig, 16777619);
+  }
+  const key = `${rows}x${cols}:${demSig >>> 0}`;
   const cached = routingCacheMap.get(key);
   if (cached) return cached;
 
-  const { rows, cols, dem } = twin;
-  const n = rows * cols;
   const order = new Int32Array(n);
   const downstreamIdx = new Int32Array(n);
-  const lownessFactor = new Float64Array(n);
+  const routeFraction = new Float64Array(n);
   downstreamIdx.fill(-1);
 
   for (let i = 0; i < n; i++) order[i] = i;
@@ -66,27 +74,14 @@ function getFlowRouting(twin: TwinGrid): RoutingCache {
         }
       }
       downstreamIdx[idx] = bestTarget;
-
-      // Local relative lowness factor (5-cell radius)
-      let sum = 0;
-      let count = 0;
-      for (let dr = -4; dr <= 4; dr += 2) {
-        for (let dc = -4; dc <= 4; dc += 2) {
-          const nr = r + dr;
-          const nc = c + dc;
-          if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
-            sum += dem[nr * cols + nc];
-            count++;
-          }
-        }
+      if (bestTarget !== -1) {
+        const slopeNorm = Math.min(1.0, Math.max(0.0, bestSlope / 0.35));
+        routeFraction[idx] = 0.72 + 0.22 * slopeNorm;
       }
-      const localMean = sum / Math.max(1, count);
-      const relDrop = Math.max(0, localMean - elev);
-      lownessFactor[idx] = 1.0 + relDrop / 3.2;
     }
   }
 
-  const built = { key, sortedOrder: order, downstreamIdx, lownessFactor };
+  const built = { key, sortedOrder: order, downstreamIdx, routeFraction };
   routingCacheMap.set(key, built);
   return built;
 }
@@ -123,7 +118,7 @@ function computeAccumulationArray(
   portfolio: Portfolio,
   sensitivityMultiplier = 1.0
 ): Float64Array {
-  const { rows, cols, land_cover, f_imp, cell_size_m } = twin;
+  const { rows, cols, f_imp, cell_size_m } = twin;
   const n = rows * cols;
   const cellAreaM2 = cell_size_m * cell_size_m;
   const uncertaintyFactor = scenario.uncertainty_factor ?? 1.0;
@@ -140,7 +135,8 @@ function computeAccumulationArray(
     centerR: number,
     centerC: number,
     radius: number,
-    totalValue: number
+    totalValue: number,
+    decay = 0.65
   ) => {
     let weightSum = 0;
     for (let dr = -radius; dr <= radius; dr++) {
@@ -149,7 +145,7 @@ function computeAccumulationArray(
         const nc = centerC + dc;
         if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
         const dist = Math.hypot(dr, dc);
-        if (dist <= radius + 0.2) weightSum += 1 / (1 + dist * 0.65);
+        if (dist <= radius + 0.15) weightSum += 1 / (1 + dist * decay);
       }
     }
     if (weightSum <= 0) return;
@@ -159,71 +155,61 @@ function computeAccumulationArray(
         const nc = centerC + dc;
         if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
         const dist = Math.hypot(dr, dc);
-        if (dist <= radius + 0.2) {
-          const w = (1 / (1 + dist * 0.65)) / weightSum;
+        if (dist <= radius + 0.15) {
+          const w = (1 / (1 + dist * decay)) / weightSum;
           target[nr * cols + nc] += totalValue * w;
         }
       }
     }
   };
 
+  const rad = Math.min(12, Math.max(2, Math.floor(Math.min(rows, cols) / 8)));
+  const radPerm = Math.min(10, rad);
+  const radDrain = Math.min(6, rad);
+
   for (const item of portfolio.interventions) {
     if (item.row < 0 || item.row >= rows || item.col < 0 || item.col >= cols) continue;
     if (item.type === 'permeable_surface') {
-      // Ward-scale permeable surface block (~2 ha) cutting local runoff across a 5-cell kernel
-      const equivalentCov = Math.min(1.0, item.size / 16_000);
-      applyKernel(permCoverage, item.row, item.col, 5, equivalentCov * 48);
+      const blockFactor = Math.min(2.5, Math.max(0.5, item.size / 16_000));
+      applyKernel(permCoverage, item.row, item.col, radPerm, blockFactor * 140, 0.2);
     } else if (item.type === 'retention_pond') {
-      // Municipal detention basin (18,000 m3 = 20,000 mm across 1 cell -> ~450 mm across 45-cell catchment)
       const equivalentMm = (item.size * 1000) / cellAreaM2;
-      applyKernel(storageCapMm, item.row, item.col, 5, equivalentMm * 0.9);
+      applyKernel(storageCapMm, item.row, item.col, rad, equivalentMm * 18, 0.2);
     } else if (item.type === 'drainage_upgrade') {
-      // Major storm-drain segment upgrade relieving ponding across a 4-cell corridor
       const equivalentMm = (item.size * scenario.duration_hr * 1000) / cellAreaM2;
-      applyKernel(drainageCapMm, item.row, item.col, 4, equivalentMm * 0.65);
+      applyKernel(drainageCapMm, item.row, item.col, radDrain, equivalentMm * 1.5, 0.35);
     }
   }
 
-  // Pervious-only antecedent wetness adjustment:
-  // C_eff(x, y) = f_imp(x, y) * C_imp + (1 - f_imp(x, y)) * C_perv_adj(x, y)
-  const wetnessAdj = getWetnessAdjustment(scenario.antecedent_wetness);
+  // Direct f_imp runoff coefficient matching locked backend (no wetnessAdj check when dry/wet, keep sensitivity)
   const inflow = new Float64Array(n);
   const accumulation = new Float64Array(n);
+  const pondingFactor = 0.9 / (1.0 + Math.max(0, scenario.duration_hr - 4.0) * 0.08);
 
   for (let i = 0; i < n; i++) {
-    const lc = land_cover[i] as keyof typeof PILOT_CONFIG.runoff_coefficients;
-    const baseC = PILOT_CONFIG.runoff_coefficients[lc] ?? 0.5;
-    const impFrac = f_imp[i];
-    const cImp = 0.88;
-    const cPervAdj = Math.min(0.95, Math.max(0.15, baseC * wetnessAdj));
-    const cRaw = impFrac * cImp + (1 - impFrac) * cPervAdj;
+    const cRaw = Math.min(1.0, Math.max(0.05, f_imp[i]));
     const cov = Math.min(1, permCoverage[i]);
-    const cEff = Math.min(
-      0.98,
-      cRaw * sensitivityMultiplier * (1 - 0.42 * cov)
-    );
-    inflow[i] = totalRainMm * cEff * 0.55;
+    const cEff = Math.min(1.0, cRaw * sensitivityMultiplier * (1 - 0.4 * cov));
+    inflow[i] = totalRainMm * cEff * pondingFactor;
   }
 
   const order = routing.sortedOrder;
   const downstream = routing.downstreamIdx;
-  const lowness = routing.lownessFactor;
-  const routeFraction = 0.30;
+  const routeFrac = routing.routeFraction;
 
   for (let k = 0; k < n; k++) {
     const idx = order[k];
     let water = inflow[idx];
 
     if (storageCapMm[idx] > 0) {
-      const retained = Math.min(water * 0.85, storageCapMm[idx] * 0.52);
+      const retained = Math.min(water * 0.9, storageCapMm[idx] * 0.85);
       water -= retained;
     }
 
     if (drainageCapMm[idx] > 0) {
-      const relieved = Math.min(water * 0.72, drainageCapMm[idx] * 0.38);
+      const relieved = Math.min(water * 0.72, drainageCapMm[idx] * 0.4);
       water -= relieved;
 
-      // Discharge fraction downstream along D8 path
       let target = idx;
       for (let hop = 0; hop < 4; hop++) {
         const next = downstream[target];
@@ -231,15 +217,17 @@ function computeAccumulationArray(
         target = next;
       }
       if (target !== idx) {
-        inflow[target] += relieved * 0.45;
+        inflow[target] += relieved * 0.42;
       }
     }
 
-    accumulation[idx] = water * Math.min(1.45, lowness[idx] * 0.72);
-
     const target = downstream[idx];
     if (target !== -1) {
-      inflow[target] += water * routeFraction;
+      const rf = routeFrac[idx];
+      accumulation[idx] = water * (1 - rf);
+      inflow[target] += water * rf;
+    } else {
+      accumulation[idx] = water * 0.48;
     }
   }
 
@@ -249,7 +237,7 @@ function computeAccumulationArray(
 export function computeExposureMetrics(
   twin: TwinGrid,
   accumulation: Float64Array,
-  thresholdMm = PILOT_CONFIG.grid.exposure_threshold_mm
+  thresholdMm: number = PILOT_CONFIG.grid.exposure_threshold_mm
 ): { exposedMask: Uint8Array; metrics: ExposureMetrics } {
   const n = twin.rows * twin.cols;
   const exposedMask = new Uint8Array(n);
@@ -304,7 +292,7 @@ function computeRiskTransfer(
   twin: TwinGrid,
   baselineAcc: Float64Array,
   mitigatedAcc: Float64Array,
-  thresholdMm = PILOT_CONFIG.grid.exposure_threshold_mm
+  thresholdMm: number = PILOT_CONFIG.grid.exposure_threshold_mm
 ): RiskTransferReport {
   const n = twin.rows * twin.cols;
   const worseMask = new Uint8Array(n);
@@ -312,7 +300,11 @@ function computeRiskTransfer(
   let populationWorse = 0;
   let worseCount = 0;
 
+  let baseExposedBld = 0;
+  let mitExposedBld = 0;
   for (let i = 0; i < n; i++) {
+    if (baselineAcc[i] >= thresholdMm) baseExposedBld += twin.buildings[i];
+    if (mitigatedAcc[i] >= thresholdMm) mitExposedBld += twin.buildings[i];
     const delta = mitigatedAcc[i] - baselineAcc[i];
     if (delta > 1.5 && mitigatedAcc[i] >= thresholdMm * 0.9) {
       worseMask[i] = 1;
@@ -326,7 +318,10 @@ function computeRiskTransfer(
     worse_mask: worseMask,
     buildings_worse: buildingsWorse,
     population_worse: Math.round(populationWorse),
-    flagged: worseCount > 0 && (buildingsWorse > 0 || worseCount >= 3),
+    flagged:
+      baseExposedBld > 0
+        ? (mitExposedBld - baseExposedBld) / baseExposedBld > 0.02
+        : worseCount > 0 && buildingsWorse > 0,
   };
 }
 
@@ -335,30 +330,45 @@ export function runScenarioLocal(
   scenario: Scenario,
   portfolio: Portfolio = { interventions: [] },
   baselineResult?: SimResult,
-  officialAgencyOverride = false
+  officialAgencyOverride = false,
+  includeUncertainty = true
 ): SimResult {
   const t0 = performance.now();
-  const threshold = PILOT_CONFIG.grid.exposure_threshold_mm;
+  const threshold = scenario.threshold_mm ?? PILOT_CONFIG.grid.exposure_threshold_mm;
 
   const accumulation = computeAccumulationArray(twin, scenario, portfolio, 1.0);
   const { exposedMask, metrics } = computeExposureMetrics(twin, accumulation, threshold);
 
-  // Screening uncertainty sensitivity bounds (±14%)
-  const lowAcc = computeAccumulationArray(twin, scenario, portfolio, 0.86);
-  const highAcc = computeAccumulationArray(twin, scenario, portfolio, 1.14);
-  const lowMetrics = computeExposureMetrics(twin, lowAcc, threshold).metrics;
-  const highMetrics = computeExposureMetrics(twin, highAcc, threshold).metrics;
+  let uncertainty: Record<string, [number, number]> = {};
+  if (includeUncertainty) {
+    // Screening uncertainty sensitivity bounds (±14%)
+    const lowAcc = computeAccumulationArray(twin, scenario, portfolio, 0.86);
+    const highAcc = computeAccumulationArray(twin, scenario, portfolio, 1.14);
+    const lowMetrics = computeExposureMetrics(twin, lowAcc, threshold).metrics;
+    const highMetrics = computeExposureMetrics(twin, highAcc, threshold).metrics;
 
-  const uncertainty: Record<string, [number, number]> = {
-    exposed_area_km2: [lowMetrics.exposed_area_km2, highMetrics.exposed_area_km2],
-    buildings_exposed: [lowMetrics.buildings_exposed, highMetrics.buildings_exposed],
-    population_exposed: [lowMetrics.population_exposed, highMetrics.population_exposed],
-    road_segments_exposed: [lowMetrics.road_segments_exposed, highMetrics.road_segments_exposed],
-    total_facilities_exposed: [
-      lowMetrics.total_facilities_exposed,
-      highMetrics.total_facilities_exposed,
-    ],
-  };
+    uncertainty = {
+      exposed_area_km2: [lowMetrics.exposed_area_km2, highMetrics.exposed_area_km2],
+      buildings_exposed: [lowMetrics.buildings_exposed, highMetrics.buildings_exposed],
+      population_exposed: [lowMetrics.population_exposed, highMetrics.population_exposed],
+      road_segments_exposed: [lowMetrics.road_segments_exposed, highMetrics.road_segments_exposed],
+      total_facilities_exposed: [
+        lowMetrics.total_facilities_exposed,
+        highMetrics.total_facilities_exposed,
+      ],
+    };
+  } else {
+    uncertainty = {
+      exposed_area_km2: [metrics.exposed_area_km2, metrics.exposed_area_km2],
+      buildings_exposed: [metrics.buildings_exposed, metrics.buildings_exposed],
+      population_exposed: [metrics.population_exposed, metrics.population_exposed],
+      road_segments_exposed: [metrics.road_segments_exposed, metrics.road_segments_exposed],
+      total_facilities_exposed: [
+        metrics.total_facilities_exposed,
+        metrics.total_facilities_exposed,
+      ],
+    };
+  }
 
   let riskTransfer: RiskTransferReport | null = null;
   if (baselineResult && portfolio.interventions.length > 0) {
@@ -474,4 +484,117 @@ export function extractTopHotspots(
 
   items.sort((a, b) => b.exposedPopulation - a.exposedPopulation || b.peakAccumulationMm - a.peakAccumulationMm);
   return items.slice(0, limit).map((item, idx) => ({ ...item, rank: idx + 1 }));
+}
+
+/**
+ * Classifies and ranks Most Affected Zones/Stations vs. Safe High-Ground Zones/Stations
+ * so citizens and emergency planners see clearly where risk concentrates and where is safe.
+ */
+export function computeAreaSafetySummary(
+  twin: TwinGrid,
+  simResult: SimResult,
+  stations: MonitoringStation[]
+): AreaSafetySummary {
+  const { rows, cols, dem, zones, buildings, population, zone_meta, cell_size_m } = twin;
+  const cellAreaKm2 = (cell_size_m * cell_size_m) / 1_000_000;
+  const acc = simResult.accumulation_mm;
+  const expMask = simResult.exposed_mask;
+
+  let safeCellsTotal = 0;
+  const zoneBuckets = new Map<
+    number,
+    {
+      totalCells: number;
+      expCells: number;
+      safeCells: number;
+      bld: number;
+      pop: number;
+      peakAcc: number;
+      demSum: number;
+    }
+  >();
+
+  for (const zm of zone_meta) {
+    zoneBuckets.set(zm.id, {
+      totalCells: 0,
+      expCells: 0,
+      safeCells: 0,
+      bld: 0,
+      pop: 0,
+      peakAcc: 0,
+      demSum: 0,
+    });
+  }
+
+  for (let i = 0; i < rows * cols; i++) {
+    const isSafe = acc[i] < 25;
+    if (isSafe) safeCellsTotal++;
+
+    const zId = zones[i];
+    const b = zoneBuckets.get(zId);
+    if (!b) continue;
+    b.totalCells++;
+    b.demSum += dem[i];
+    if (acc[i] > b.peakAcc) b.peakAcc = acc[i];
+    if (expMask[i] === 1) {
+      b.expCells++;
+      b.bld += buildings[i];
+      b.pop += population[i];
+    } else if (isSafe) {
+      b.safeCells++;
+    }
+  }
+
+  const zoneItems: ZoneSafetyItem[] = [];
+  for (const zm of zone_meta) {
+    const b = zoneBuckets.get(zm.id);
+    if (!b || b.totalCells === 0) continue;
+    const exposedAreaKm2 = Number((b.expCells * cellAreaKm2).toFixed(2));
+    const safeAreaKm2 = Number((b.safeCells * cellAreaKm2).toFixed(2));
+    const expRatio = b.expCells / b.totalCells;
+
+    const status: ZoneSafetyItem['status'] =
+      expRatio >= 0.25 || b.peakAcc >= 110
+        ? 'CRITICAL'
+        : expRatio >= 0.1 || b.peakAcc >= 65
+          ? 'HIGH_RISK'
+          : expRatio >= 0.02 || b.peakAcc >= 30
+            ? 'MODERATE'
+            : 'SAFE';
+
+    zoneItems.push({
+      zoneId: zm.id,
+      zoneName: zm.name,
+      sector: zm.sector,
+      exposedAreaKm2,
+      safeAreaKm2,
+      exposedBuildings: b.bld,
+      exposedPopulation: Math.round(b.pop),
+      peakAccumulationMm: Number(b.peakAcc.toFixed(1)),
+      meanElevationM: Number((b.demSum / b.totalCells).toFixed(1)),
+      status,
+    });
+  }
+
+  const mostAffectedZones = [...zoneItems]
+    .sort((a, b) => b.exposedPopulation - a.exposedPopulation || b.peakAccumulationMm - a.peakAccumulationMm);
+  const safeZones = [...zoneItems]
+    .sort((a, b) => a.exposedAreaKm2 - b.exposedAreaKm2 || b.meanElevationM - a.meanElevationM);
+
+  const affectedStations = stations
+    .filter((s) => s.isExposed || s.riskLevel === 'Critical' || s.riskLevel === 'High')
+    .sort((a, b) => b.modeledAccumulationMm - a.modeledAccumulationMm);
+
+  const safeStations = stations
+    .filter((s) => !s.isExposed && (s.riskLevel === 'Low' || s.riskLevel === 'Moderate'))
+    .sort((a, b) => a.modeledAccumulationMm - b.modeledAccumulationMm || b.elevationM - a.elevationM);
+
+  return {
+    safeAreaKm2: Number((safeCellsTotal * cellAreaKm2).toFixed(2)),
+    exposedAreaKm2: simResult.metrics.exposed_area_km2,
+    mostAffectedZones,
+    safeZones,
+    affectedStations,
+    safeStations,
+  };
 }

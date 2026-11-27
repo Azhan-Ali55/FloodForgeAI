@@ -63,18 +63,29 @@ class TwinGrid:
     dem: np.ndarray                      # elevation, metres (float)
     land_cover: np.ndarray               # ESA WorldCover class codes (int)
     population: np.ndarray               # people per cell (float)
-    buildings: np.ndarray                # building count per cell (int)
+    buildings: np.ndarray                # building count or 0/1 mask per cell (int)
     roads: np.ndarray                    # bool, True where a road cell is
     facilities: dict[str, np.ndarray]    # e.g. {"school": bool, "hospital": bool}
     cell_size_m: float
     crs: str
     transform: tuple | None = None       # affine transform from rasterio, if known
+    f_imp: np.ndarray | None = None      # optional normalized impervious fraction (0.0-1.0)
+    zones: np.ndarray | None = None      # optional admin zone IDs (e.g. 1=Upstream, 2=Downstream)
 
     def __post_init__(self):
         shape = self.dem.shape
-        rasters = {"land_cover": self.land_cover, "population": self.population,
-                   "buildings": self.buildings, "roads": self.roads,
-                   **{f"facilities[{k}]": v for k, v in self.facilities.items()}}
+        rasters = {
+            "land_cover": self.land_cover,
+            "population": self.population,
+            "buildings": self.buildings,
+            "roads": self.roads,
+            **{f"facilities[{k}]": v for k, v in self.facilities.items()},
+        }
+        if self.f_imp is not None:
+            rasters["f_imp"] = self.f_imp
+        if self.zones is not None:
+            rasters["zones"] = self.zones
+
         for name, arr in rasters.items():
             if arr.shape != shape:
                 raise ValueError(f"{name} shape {arr.shape} != dem shape {shape}")
@@ -115,6 +126,7 @@ class SimResult:
     uncertainty: dict[str, tuple[float, float]] = field(default_factory=dict)  # metric -> (low, high)
     assumptions: list[str] = field(default_factory=list)
     screening_level: bool = True         # always True for this project
+    zone_breakdown: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 class Simulator(Protocol):

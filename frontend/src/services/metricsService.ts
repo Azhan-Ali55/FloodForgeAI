@@ -39,24 +39,24 @@ export function buildDataSourceHealth(
     {
       id: 'dem',
       name: 'Copernicus DEM GLO-30',
-      dataset: '30 m Elevation Raster (EPSG:32643)',
+      dataset: '30 m Real Terrain Elevation Raster',
       status: isBackendReal ? 'CONNECTED' : 'SYNTHETIC_PROXY',
       lastUpdated: 'Static Baseline',
       completenessPct: 100,
       sourceType: isBackendReal ? 'Open Geospatial Raster' : 'Synthetic Digital Twin',
       notes: isBackendReal
-        ? 'Sink-filled GLO-30 terrain aligned to 30 m grid.'
-        : 'Parametric Nullah Lai valley DEM proxy (542 m → 493 m).',
+        ? 'Real 30 m terrain topography across Nullah Lai basin.'
+        : 'Parametric Nullah Lai valley terrain proxy (542 m → 493 m).',
     },
     {
       id: 'imperviousness',
       name: 'ESA WorldCover Imperviousness',
-      dataset: 'Land Cover Classes (10–80) & f_imp [0..1]',
+      dataset: 'Land Cover & Paved Urban Surface Fraction',
       status: isBackendReal ? 'CONNECTED' : 'SYNTHETIC_PROXY',
       lastUpdated: 'Static Baseline',
       completenessPct: 100,
       sourceType: isBackendReal ? 'Open Geospatial Raster' : 'Synthetic Digital Twin',
-      notes: 'Pervious vs. built-up fraction supporting AMC wetness separation.',
+      notes: 'Pervious green space vs. paved urban surface for runoff calculation.',
     },
     {
       id: 'population',
@@ -114,7 +114,8 @@ export function buildDataSourceHealth(
 export function buildModelDiagnostics(
   twin: TwinGrid,
   simResult: SimResult,
-  optResult: OptimizationResult | null
+  optResult: OptimizationResult | null,
+  isRealCalibrated = false
 ): ModelDiagnostics {
   return {
     d8FlowRoutingStatus: 'CONVERGED',
@@ -124,9 +125,10 @@ export function buildModelDiagnostics(
     surrogateValidationR2: optResult?.surrogateDiagnostics.validationR2 ?? 0.896,
     trainSampleCount: optResult?.surrogateDiagnostics.trainSamples ?? 800,
     validationSampleCount: optResult?.surrogateDiagnostics.validationSamples ?? 200,
-    validationStatus:
-      'Surrogate fidelity benchmarked against D8 simulator only — field gauge validation pending PMD telemetry.',
-    mlMaturityTier: 'TIER_1_SYNTHETIC',
+    validationStatus: isRealCalibrated
+      ? 'D8 routing calibrated on 30 m Copernicus GLO-30 DEM twin; surrogate trained to simulator — PMD field gauge validation pending.'
+      : 'Surrogate fidelity benchmarked against D8 simulator only — field gauge validation pending PMD telemetry.',
+    mlMaturityTier: isRealCalibrated ? 'TIER_2_CALIBRATED' : 'TIER_1_SYNTHETIC',
     gridShape: `${twin.rows} × ${twin.cols} (${twin.cell_size_m} m)`,
     crs: twin.crs,
   };

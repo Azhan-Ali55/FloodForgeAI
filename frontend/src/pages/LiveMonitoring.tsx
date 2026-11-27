@@ -1,31 +1,39 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity,
   CloudRain,
-  Database,
+  Droplets,
   MapPin,
   RefreshCw,
   Thermometer,
-  Waves,
   Wind,
 } from 'lucide-react';
 import { MunicipalPanel, StationRiskBadge } from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
+import { formatSoilMoistureStatus } from '../services/forecastService';
 import { cn } from '../utils/cn';
 import { formatCoord } from '../utils/formatters';
 
 export function LiveMonitoring() {
   const navigate = useNavigate();
   const {
+    operationalMode,
     weather,
+    backendForecast,
     isSyncingWeather,
     refreshWeather,
     monitoringStations,
     setSelectedStationId,
-    dataSources,
-    events,
   } = useFloodForge();
+
+  const soilMoisture = useMemo(
+    () =>
+      formatSoilMoistureStatus(
+        weather,
+        operationalMode === 'demo_2001' ? null : backendForecast
+      ),
+    [weather, operationalMode, backendForecast]
+  );
 
   const statusSummary = useMemo(() => {
     const counts = { Low: 0, Moderate: 0, High: 0, Critical: 0 };
@@ -98,11 +106,11 @@ export function LiveMonitoring() {
         </div>
         <div className="bg-white border border-[#D6DCE4] rounded p-3">
           <div className="flex items-center gap-1.5 text-[11px] text-[#5A6A7E]">
-            <Waves className="w-3.5 h-3.5 text-[#244D8F]" />
-            Water Temp
+            <Droplets className="w-3.5 h-3.5 text-[#244D8F]" />
+            Soil Moisture (0–9 cm)
           </div>
-          <div className="text-sm font-semibold font-mono text-[#5A6A7E] mt-1.5">
-            Data unavailable
+          <div className="text-sm font-semibold font-mono text-[#173C79] mt-1.5">
+            {soilMoisture.combinedLabel}
           </div>
         </div>
         <div className="bg-white border border-[#D6DCE4] rounded p-3">
@@ -137,7 +145,7 @@ export function LiveMonitoring() {
                 <th className="py-2 px-2.5">Location</th>
                 <th className="py-2 px-2.5">Coordinates</th>
                 <th className="py-2 px-2.5 text-right">Rainfall</th>
-                <th className="py-2 px-2.5 text-right">Water Level (Proxy)</th>
+                <th className="py-2 px-2.5 text-right">Est. Water Depth</th>
                 <th className="py-2 px-2.5 text-right">Air Temp</th>
                 <th className="py-2 px-2.5 text-right">Wind</th>
                 <th className="py-2 px-2.5">Risk</th>
@@ -192,68 +200,6 @@ export function LiveMonitoring() {
           </table>
         </div>
       </MunicipalPanel>
-
-      {/* Data Source Health + Event Stream */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <MunicipalPanel
-          title="Connected Data Feeds & GIS Layers"
-          icon={<Database className="w-4 h-4" />}
-          className="lg:col-span-7"
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {dataSources.map((ds) => {
-              const dotColor =
-                ds.status === 'CONNECTED'
-                  ? '#55A85F'
-                  : ds.status === 'SYNTHETIC_PROXY'
-                    ? '#244D8F'
-                    : '#EF8735';
-              return (
-                <div
-                  key={ds.id}
-                  className="p-2.5 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC] space-y-1"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1.5 text-xs font-semibold text-[#173C79]">
-                      <span
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: dotColor }}
-                      />
-                      {ds.name}
-                    </span>
-                    <span className="text-[10px] font-mono text-[#5A6A7E]">
-                      {ds.completenessPct}%
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-[#5A6A7E]">{ds.notes}</div>
-                </div>
-              );
-            })}
-          </div>
-        </MunicipalPanel>
-
-        <MunicipalPanel
-          title="Recent Telemetry & System Events"
-          icon={<Activity className="w-4 h-4" />}
-          className="lg:col-span-5"
-        >
-          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-            {events.slice(0, 8).map((ev) => (
-              <div
-                key={ev.id}
-                className="p-2.5 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC] space-y-0.5"
-              >
-                <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
-                  <span className="font-semibold text-[#173C79]">{ev.category}</span>
-                  <span className="text-[#5A6A7E]">{ev.timestamp.split(',').pop()?.trim()}</span>
-                </div>
-                <div className="text-xs font-semibold text-[#26364A]">{ev.title}</div>
-                <div className="text-[11px] text-[#5A6A7E]">{ev.detail}</div>
-              </div>
-            ))}
-          </div>
-        </MunicipalPanel>
-      </div>
     </div>
   );
 }

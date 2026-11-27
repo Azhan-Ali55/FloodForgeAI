@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   Building2,
+  CalendarDays,
   CheckCircle2,
   CloudLightning,
+  Download,
   Droplets,
   History,
   Loader2,
@@ -34,8 +36,11 @@ import {
   ScenarioTagBadge,
 } from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
-import { runPortfolioOptimizationLocal } from '../engine/optimizer';
+import { buildPreparednessActions } from '../engine/monitoringStations';
 import { PILOT_CONFIG } from '../engine/pilotConfig';
+import { buildScenarioForOutlookDay } from '../services/forecastService';
+import { executeOptimization } from '../services/optimizerService';
+import { downloadSimulationReportCsv } from '../utils/reportExport';
 import type {
   AntecedentWetnessLevel,
   ForecastHorizon,
@@ -50,6 +55,7 @@ const STORM_PRESETS: Array<{
   name: string;
   intensity: number;
   duration: number;
+  thresholdMm: number;
   wetness: AntecedentWetnessLevel;
   tag: ScenarioTag;
 }> = [
@@ -57,6 +63,7 @@ const STORM_PRESETS: Array<{
     name: 'Moderate Monsoon',
     intensity: 38,
     duration: 2.5,
+    thresholdMm: 50,
     wetness: 'normal',
     tag: 'HYPOTHETICAL_STRESS_TEST',
   },
@@ -64,6 +71,7 @@ const STORM_PRESETS: Array<{
     name: 'Severe Cloudburst',
     intensity: 76,
     duration: 3,
+    thresholdMm: 50,
     wetness: 'wet',
     tag: 'HYPOTHETICAL_STRESS_TEST',
   },
@@ -71,13 +79,14 @@ const STORM_PRESETS: Array<{
     name: '2001 Cloudburst (620 mm / 10h)',
     intensity: 62,
     duration: 10,
+    thresholdMm: 150,
     wetness: 'saturated',
     tag: 'HYPOTHETICAL_STRESS_TEST',
   },
 ];
 
 interface HistoricalEventSpec {
-  id: '2001_cloudburst' | '2021_monsoon';
+  id: '2001_cloudburst' | '2026_monsoon' | '2021_monsoon';
   title: string;
   dateLabel: string;
   summary: string;
@@ -92,10 +101,20 @@ const HISTORICAL_EVENTS: HistoricalEventSpec[] = [
     title: 'July 23, 2001 Islamabad–Rawalpindi Cloudburst',
     dateLabel: '620 mm over 10 hr · Saturated Basin',
     summary:
-      'Historic extreme cloudburst along Nullah Lai. Replays unmitigated inundation vs. counterfactual loss prevented by AI-sited retention ponds, permeable zones, and drainage upgrades.',
+      'Historic extreme cloudburst along Nullah Lai (62 mm/hr × 10 hr). Replays unmitigated inundation vs. counterfactual loss prevented by retention ponds, permeable zones, and drainage upgrades.',
     rainfallMmHr: 62,
     durationHr: 10,
     wetness: 'saturated',
+  },
+  {
+    id: '2026_monsoon',
+    title: 'Sept 2026 Nullah Lai Monsoon Event',
+    dateLabel: '201 mm over 24 hr · Wet Basin',
+    summary:
+      'Sustained 24-hour monsoon benchmark (~8.4 mm/hr × 24 hr) calibrated in metadata.json to evaluate prolonged urban drainage accumulation and downstream Rawalpindi equity.',
+    rainfallMmHr: 8.4,
+    durationHr: 24,
+    wetness: 'wet',
   },
   {
     id: '2021_monsoon',
@@ -109,7 +128,7 @@ const HISTORICAL_EVENTS: HistoricalEventSpec[] = [
   },
 ];
 
-const HINDCAST_BUDGETS = [50_000_000, 100_000_000, 150_000_000, 250_000_000];
+const HINDCAST_BUDGETS = [50_000_000, 150_000_000, 200_000_000, 300_000_000];
 const hindcastCache = new Map<string, OptimizationResult>();
 
 export function FloodPrediction() {
@@ -118,6 +137,8 @@ export function FloodPrediction() {
     weather,
     forecastHorizon,
     setForecastHorizon,
+    monsoonStressMode,
+    toggleMonsoonStressMode,
     twin,
     simScenario,
     setSimScenario,
@@ -128,12 +149,14 @@ export function FloodPrediction() {
     optConfig,
     setOptConfig,
     runOptimization,
+    engineMode,
+    apiUrl,
   } = useFloodForge();
 
   const [validationError, setValidationError] = useState<string | null>(null);
   const [hindcastEventId, setHindcastEventId] =
     useState<HistoricalEventSpec['id']>('2001_cloudburst');
-  const [hindcastBudget, setHindcastBudget] = useState<number>(100_000_000);
+  const [hindcastBudget, setHindcastBudget] = useState<number>(200_000_000);
   const [hindcastResult, setHindcastResult] = useState<OptimizationResult | null>(null);
   const [isRunningHindcast, setIsRunningHindcast] = useState(false);
 
@@ -143,25 +166,31 @@ export function FloodPrediction() {
   );
 
   useEffect(() => {
-    const cacheKey = `${twin.studyAreaId}:${hindcastEventId}:${hindcastBudget}`;
+    const thresholdMm = activeHistoricalEvent.id === '2001_cloudburst' ? 150 : 50;
+    const cacheKey = `${twin.studyAreaId}:${twin.rows}:${engineMode}:${hindcastEventId}:${hindcastBudget}:${thresholdMm}`;
     const cached = hindcastCache.get(cacheKey);
     if (cached) {
       setHindcastResult(cached);
+      setIsRunningHindcast(false);
       return;
     }
     let active = true;
+    const abortCtrl = new AbortController();
     setIsRunningHindcast(true);
     const timer = setTimeout(() => {
       const scenario: Scenario = {
         rainfall_mm_per_hr: activeHistoricalEvent.rainfallMmHr,
         duration_hr: activeHistoricalEvent.durationHr,
         budget_pkr: hindcastBudget,
+        threshold_mm: thresholdMm,
         antecedent_wetness: activeHistoricalEvent.wetness,
         uncertainty_factor: 1.0,
         tag: 'HYPOTHETICAL_STRESS_TEST',
         label: activeHistoricalEvent.title,
       };
-      const res = runPortfolioOptimizationLocal(
+      executeOptimization(
+        engineMode,
+        apiUrl,
         twin,
         scenario,
         {
@@ -169,24 +198,33 @@ export function FloodPrediction() {
           budgetPkr: hindcastBudget,
           enabledTypes: ['retention_pond', 'permeable_surface', 'drainage_upgrade'],
         },
-        false
-      );
-      if (!active) return;
-      hindcastCache.set(cacheKey, res);
-      setHindcastResult(res);
-      setIsRunningHindcast(false);
+        false,
+        abortCtrl.signal
+      )
+        .then(({ result }) => {
+          if (!active) return;
+          hindcastCache.set(cacheKey, result);
+          setHindcastResult(result);
+          setIsRunningHindcast(false);
+        })
+        .catch(() => {
+          if (active) setIsRunningHindcast(false);
+        });
     }, 60);
     return () => {
       active = false;
+      abortCtrl.abort();
       clearTimeout(timer);
     };
-  }, [twin, hindcastEventId, hindcastBudget, activeHistoricalEvent, optConfig]);
+  }, [twin, hindcastEventId, hindcastBudget, activeHistoricalEvent, optConfig, engineMode, apiUrl]);
 
   const handleLoadHindcastToMap = async () => {
+    const thresholdMm = activeHistoricalEvent.id === '2001_cloudburst' ? 150 : 50;
     const scenario: Scenario = {
       rainfall_mm_per_hr: activeHistoricalEvent.rainfallMmHr,
       duration_hr: activeHistoricalEvent.durationHr,
       budget_pkr: hindcastBudget,
+      threshold_mm: thresholdMm,
       antecedent_wetness: activeHistoricalEvent.wetness,
       uncertainty_factor: 1.0,
       tag: 'HYPOTHETICAL_STRESS_TEST',
@@ -249,7 +287,6 @@ export function FloodPrediction() {
   );
 
   const preparednessActions = useMemo(() => {
-    const actions: Array<{ priority: 'HIGH' | 'MEDIUM' | 'ROUTINE'; text: string }> = [];
     const totalRain = Number(
       (
         simScenario.rainfall_mm_per_hr *
@@ -257,44 +294,13 @@ export function FloodPrediction() {
         (simScenario.uncertainty_factor ?? 1)
       ).toFixed(0)
     );
-
-    if (simActiveResult.metrics.exposed_area_km2 <= 0.1) {
-      actions.push({
-        priority: 'ROUTINE',
-        text: `Modeled accumulation is within routine drainage capacity (${totalRain} mm scenario). Maintain standard WASA monitoring.`,
-      });
-      return actions;
-    }
-
-    const hospitals = exposedFacilityList.filter((f) => f.type === 'hospital');
-    const rescueNodes = exposedFacilityList.filter((f) => f.type === 'rescue_1122');
-    const wasaNodes = exposedFacilityList.filter((f) => f.type === 'wasa_station');
-
-    if (hospitals.length > 0) {
-      actions.push({
-        priority: 'HIGH',
-        text: `Protect backup power & ground-floor triage at ${hospitals.map((h) => h.name).join(', ')} (within modeled >=50 mm risk mask).`,
-      });
-    }
-    if (rescueNodes.length > 0 || wasaNodes.length > 0) {
-      const names = [...wasaNodes, ...rescueNodes].map((n) => n.name).join(', ');
-      actions.push({
-        priority: 'HIGH',
-        text: `Verify pump readiness & pre-position Rescue 1122 response units near ${names}.`,
-      });
-    }
-    if (simActiveResult.metrics.road_segments_exposed > 0) {
-      actions.push({
-        priority: 'MEDIUM',
-        text: `Issue pre-storm traffic diversion advisory for ${simActiveResult.metrics.road_segments_exposed} modeled flood-exposed arterial corridors (including low-lying Nullah Lai crossings).`,
-      });
-    }
-    actions.push({
-      priority: 'MEDIUM',
-      text: `Screening scenario (${totalRain} mm total) estimates ${simActiveResult.metrics.exposed_area_km2.toFixed(2)} km² exposed — cross-verify with official PMD & NDMA bulletins before public directives.`,
-    });
-    return actions;
-  }, [exposedFacilityList, simActiveResult, simScenario]);
+    return buildPreparednessActions(
+      twin,
+      simActiveResult,
+      totalRain,
+      simScenario.threshold_mm ?? 50
+    );
+  }, [twin, simActiveResult, simScenario]);
 
   const comparisonRows = useMemo(() => {
     const b = simBaselineResult.metrics;
@@ -388,22 +394,52 @@ export function FloodPrediction() {
             </div>
           }
         >
-          <div className="flex items-center justify-between text-xs text-[#5A6A7E] mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#5A6A7E] mb-2">
             <span>
-              {forecastHorizon}h cumulative forecast:{' '}
-              <strong className="text-[#173C79] font-mono">{horizonTotalMm.toFixed(1)} mm</strong> · Peak hourly:{' '}
+              Peak 6h window:{' '}
+              <strong className="text-[#173C79] font-mono">
+                {(() => {
+                  const slice = weather.hourlyForecast.slice(0, forecastHorizon);
+                  let best = 0;
+                  for (let i = 0; i <= Math.max(0, slice.length - 6); i++) {
+                    let s = 0;
+                    for (let j = 0; j < 6 && i + j < slice.length; j++) s += slice[i + j].precipitationMm;
+                    if (s > best) best = s;
+                  }
+                  return best.toFixed(1);
+                })()} mm
+              </strong>{' '}
+              · {forecastHorizon}h total:{' '}
+              <strong className="font-mono text-[#26364A]">{horizonTotalMm.toFixed(1)} mm</strong> · Peak hourly:{' '}
               <strong className="font-mono text-[#26364A]">{weather.peakHourlyMm} mm/h</strong>
             </span>
-            <span
-              className={cn(
-                'text-[10px] font-mono px-2 py-0.5 rounded-sm border',
-                weather.source === 'OPEN_METEO_LIVE'
-                  ? 'bg-[#EDF7EE] border-[#55A85F]/50 text-[#2F6F37]'
-                  : 'bg-[#FEF9E7] border-[#E0B422]/70 text-[#8A6700]'
+            <div className="flex items-center gap-2">
+              {monsoonStressMode && (
+                <button
+                  type="button"
+                  onClick={toggleMonsoonStressMode}
+                  className="text-[10px] font-mono px-2 py-0.5 rounded-sm bg-[#EF8735] text-white font-semibold cursor-pointer hover:bg-[#D97222]"
+                >
+                  Exit Monsoon Test
+                </button>
               )}
-            >
-              {weather.source === 'OPEN_METEO_LIVE' ? 'LIVE OPEN-METEO' : 'FALLBACK DATA'}
-            </span>
+              <span
+                className={cn(
+                  'text-[10px] font-mono px-2 py-0.5 rounded-sm border',
+                  weather.source === 'OPEN_METEO_LIVE'
+                    ? 'bg-[#EDF7EE] border-[#55A85F]/50 text-[#2F6F37]'
+                    : monsoonStressMode
+                      ? 'bg-[#FDF1E7] border-[#EF8735]/70 text-[#A64D0B]'
+                      : 'bg-[#FEF9E7] border-[#E0B422]/70 text-[#8A6700]'
+                )}
+              >
+                {weather.source === 'OPEN_METEO_LIVE'
+                  ? 'LIVE OPEN-METEO'
+                  : monsoonStressMode
+                    ? 'MONSOON SURGE TEST'
+                    : 'FALLBACK DATA'}
+              </span>
+            </div>
           </div>
 
           <div className="h-64">
@@ -507,6 +543,87 @@ export function FloodPrediction() {
         </MunicipalPanel>
       </div>
 
+      {/* 30-Day Multi-Tier Flood Outlook (16d Daily + 30d Ensemble) */}
+      <MunicipalPanel
+        title="30-Day Extended Flood Outlook (16-Day Deterministic + Days 17–30 Ensemble)"
+        icon={<CalendarDays className="w-4 h-4" />}
+        rightSlot={
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono text-white/85">
+              30d Total: {weather.forecast30dMm} mm
+            </span>
+            <button
+              type="button"
+              onClick={toggleMonsoonStressMode}
+              className={cn(
+                'px-2 py-0.5 rounded-sm text-[10px] font-semibold border transition-colors cursor-pointer',
+                monsoonStressMode
+                  ? 'bg-[#EF8735] border-[#EF8735] text-white'
+                  : 'bg-white/10 border-white/25 text-white hover:bg-white/20'
+              )}
+            >
+              {monsoonStressMode ? 'Exit Monsoon Test' : 'Test 30-Day Monsoon Surge'}
+            </button>
+          </div>
+        }
+        bodyClassName="p-3.5 space-y-3"
+      >
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 text-xs">
+          {weather.earliestFloodAlert ? (
+            <div className="flex items-center gap-2 text-[#A12323] font-medium">
+              <AlertTriangle className="w-4 h-4 text-[#D94343] flex-shrink-0" />
+              <span>{weather.earliestFloodAlert.summary}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-[#2F6F37] font-medium">
+              <CheckCircle2 className="w-4 h-4 text-[#55A85F] flex-shrink-0" />
+              <span>No flood-triggering rainfall (&gt;35 mm/day) detected in the next 30 days.</span>
+            </div>
+          )}
+          <span className="text-[11px] text-[#5A6A7E]">
+            Click any bar to run the 30 m D8 flood simulation for that future date.
+          </span>
+        </div>
+
+        <div className="h-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={weather.outlook30d}
+              onClick={(state) => {
+                const payload = (state as { activePayload?: Array<{ payload: typeof weather.outlook30d[number] }> })?.activePayload?.[0]?.payload;
+                if (payload) {
+                  const s = buildScenarioForOutlookDay(payload, weather, simScenario.budget_pkr);
+                  runCloudburstSimulation(s);
+                }
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#E6EAEF" vertical={false} />
+              <XAxis
+                dataKey="dateLabel"
+                tick={{ fill: '#5A6A7E', fontSize: 10 }}
+                interval={2}
+              />
+              <YAxis tick={{ fill: '#5A6A7E', fontSize: 10 }} unit="mm" />
+              <Tooltip contentStyle={{ fontSize: 12, borderColor: '#CBD5E1' }} />
+              <Bar
+                dataKey="rainfallMm"
+                name="Daily Rain (mm)"
+                fill="#244D8F"
+                radius={[2, 2, 0, 0]}
+              />
+              <Line
+                type="monotone"
+                dataKey="p90RainfallMm"
+                name="P90 Ensemble Envelope (mm)"
+                stroke="#EF8735"
+                strokeWidth={1.8}
+                dot={false}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </MunicipalPanel>
+
       {/* Cloudburst Scenario Simulator + Prediction Results */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <MunicipalPanel
@@ -530,6 +647,7 @@ export function FloodPrediction() {
                         ...prev,
                         rainfall_mm_per_hr: p.intensity,
                         duration_hr: p.duration,
+                        threshold_mm: p.thresholdMm,
                         antecedent_wetness: p.wetness,
                         tag: p.tag,
                         label: p.name,
@@ -597,8 +715,8 @@ export function FloodPrediction() {
               <div className="flex items-center gap-3">
                 <input
                   type="range"
-                  min={1}
-                  max={12}
+                  min={0.5}
+                  max={24}
                   step={0.5}
                   value={simScenario.duration_hr}
                   onChange={(e) =>
@@ -674,6 +792,10 @@ export function FloodPrediction() {
               </div>
             )}
 
+            <div className="p-2 rounded-sm bg-[#EEF3FA] border border-[#173C79]/25 text-[11px] text-[#173C79] leading-snug">
+              <strong>Downhill Flow Modeling:</strong> Modeled using 30 m D8 topological flow routing across the 200×200 DEM (runoff flows downhill cell-by-cell).
+            </div>
+
             <button
               type="submit"
               disabled={isSimulating}
@@ -697,9 +819,28 @@ export function FloodPrediction() {
         <MunicipalPanel
           title="Modeled Flood Exposure & Scenario Comparison"
           rightSlot={
-            <span className="text-[10px] font-mono text-white/85">
-              Runtime: {simActiveResult.runtime_ms} ms
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  downloadSimulationReportCsv({
+                    scenarioLabel: simScenario.label ?? simScenario.tag,
+                    timestampPkt: simActiveResult.timestamp_pkt,
+                    thresholdMm: simScenario.threshold_mm ?? 50,
+                    baseline: simBaselineResult,
+                    simulated: simActiveResult,
+                    actions: preparednessActions,
+                  })
+                }
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-white/15 hover:bg-white/25 border border-white/25 text-white text-[10px] font-semibold cursor-pointer"
+              >
+                <Download className="w-3 h-3" />
+                Export Report
+              </button>
+              <span className="text-[10px] font-mono text-white/85">
+                Runtime: {simActiveResult.runtime_ms} ms
+              </span>
+            </div>
           }
           className="xl:col-span-7"
           bodyClassName="p-4 space-y-4"
@@ -754,12 +895,12 @@ export function FloodPrediction() {
                 Critical Facilities Within Modeled Risk Mask ({exposedFacilityList.length})
               </span>
               <span className="text-[10px] font-mono text-[#5A6A7E]">
-                &ge; 50 mm runoff proxy
+                &ge; {simScenario.threshold_mm ?? 50} mm runoff proxy
               </span>
             </div>
             {exposedFacilityList.length === 0 ? (
               <div className="p-2.5 rounded-sm bg-[#EDF7EE] border border-[#55A85F]/40 text-xs text-[#2F6F37]">
-                No critical facilities intersect the 50 mm screening risk mask under this scenario.
+                No critical facilities intersect the {simScenario.threshold_mm ?? 50} mm screening risk mask under this scenario.
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

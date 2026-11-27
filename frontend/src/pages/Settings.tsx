@@ -18,7 +18,6 @@ export function Settings() {
     apiUrl,
     setApiUrl,
     apiHealthy,
-    apiLatencyMs,
     checkApiHealth,
     officialAgencyOverride,
     setOfficialAgencyOverride,
@@ -43,18 +42,18 @@ export function Settings() {
           Platform &amp; Backend Integration Settings
         </h1>
         <p className="text-xs sm:text-sm text-[#5A6A7E]">
-          Configure Python REST API connectivity, agency authorization gates, and local weather telemetry cache.
+          Configure portal connectivity, emergency authorization gates, and local weather cache.
         </p>
       </div>
 
-      {/* Engine & Backend REST API Integration */}
+      {/* Simulation Compute Mode */}
       <MunicipalPanel
-        title="Simulation & Optimizer Compute Backend"
+        title="Simulation Compute Mode"
         icon={<Server className="w-4 h-4" />}
         rightSlot={
           <span
             className={cn(
-              'flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-[10px] font-mono',
+              'flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-[10px] font-semibold',
               apiHealthy
                 ? 'bg-[#55A85F] text-white'
                 : 'bg-white/15 text-white'
@@ -63,12 +62,12 @@ export function Settings() {
             {apiHealthy ? (
               <>
                 <Wifi className="w-3 h-3" />
-                API Connected ({apiLatencyMs} ms)
+                Connected
               </>
             ) : (
               <>
                 <WifiOff className="w-3 h-3" />
-                Local Screening Mode
+                Offline Mode
               </>
             )}
           </span>
@@ -88,14 +87,14 @@ export function Settings() {
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#173C79]">
-                In-Browser Deterministic Engine
+                In-Browser Mode
               </span>
               {engineMode === 'local' && (
                 <CheckCircle2 className="w-4 h-4 text-[#55A85F]" />
               )}
             </div>
             <p className="text-[11px] text-[#5A6A7E] mt-1 leading-relaxed">
-              Runs topological D8 routing, Pareto optimizer, and zone risk-transfer audits locally with zero backend latency.
+              Runs flood simulation and investment planning locally in the browser without external server dependency.
             </p>
           </button>
 
@@ -111,22 +110,21 @@ export function Settings() {
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#173C79]">
-                Connected Python REST API
+                Connected Analytics Server
               </span>
               {engineMode === 'api' && (
                 <CheckCircle2 className="w-4 h-4 text-[#55A85F]" />
               )}
             </div>
             <p className="text-[11px] text-[#5A6A7E] mt-1 leading-relaxed">
-              Calls <code className="text-[#173C79]">/api/simulate</code> and{' '}
-              <code className="text-[#173C79]">/api/optimize</code> on the FloodForge Python server with automatic local fallback on error.
+              Uses the dedicated FloodForge calculation server with automatic browser fallback if unavailable.
             </p>
           </button>
         </div>
 
         <div className="space-y-1.5 pt-2">
           <label className="text-xs font-semibold text-[#26364A]">
-            Backend Base URL (<code className="text-[#173C79]">VITE_API_BASE_URL</code>)
+            Server Connection Address
           </label>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -142,9 +140,13 @@ export function Settings() {
               disabled={checking}
               className="px-4 py-2 rounded-sm bg-[#173C79] hover:bg-[#244D8F] text-white font-semibold text-xs uppercase tracking-wider cursor-pointer"
             >
-              {checking ? 'Pinging...' : 'Test /api/health'}
+              {checking ? 'Checking...' : 'Check Server Connection'}
             </button>
           </div>
+          <p className="text-[11px] text-[#5A6A7E]">
+            Admin Service Endpoints: <code className="font-mono text-[#173C79]">/api/simulate</code> (Run Flood Simulation) ·{' '}
+            <code className="font-mono text-[#173C79]">/api/optimize</code> (Run Budget Optimization)
+          </p>
         </div>
       </MunicipalPanel>
 

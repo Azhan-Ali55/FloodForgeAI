@@ -36,8 +36,12 @@ const WEIGHT_FIELDS: Array<{ key: keyof OptimizationWeights; label: string }> = 
 
 export function MitigationOptimizer() {
   const {
+    operationalMode,
+    setOperationalMode,
+    activeThresholdMm,
     optConfig,
     setOptConfig,
+    setPitchBudgetPkr,
     optResult,
     isOptimizing,
     optProgressStage,
@@ -104,20 +108,67 @@ export function MitigationOptimizer() {
             Flood Mitigation Investment Optimizer
           </h1>
           <p className="text-xs sm:text-sm text-[#5A6A7E]">
-            Discover the most effective flood-mitigation portfolio within your available municipal budget.
+            {PILOT_CONFIG.comparison_label}
           </p>
         </div>
-        {optResult && (
-          <div className="flex items-center gap-2 text-xs font-mono text-[#26364A]">
-            <span className="px-2.5 py-1 rounded-sm bg-[#EDF7EE] border border-[#55A85F]/50 text-[#2F6F37]">
-              Surrogate R² (Val): {optResult.surrogateDiagnostics.validationR2.toFixed(3)}
-            </span>
-            <span className="px-2.5 py-1 rounded-sm bg-white border border-[#D6DCE4]">
-              Solve: {optResult.runtimeMs} ms
-            </span>
+        <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#26364A]">
+          <div className="flex items-center rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] p-0.5 font-sans font-semibold text-[11px]">
+            <button
+              type="button"
+              onClick={() => setOperationalMode('live_ops')}
+              className={cn(
+                'px-2.5 py-1 rounded-xs cursor-pointer',
+                operationalMode === 'live_ops' ? 'bg-[#173C79] text-white' : 'text-[#5A6A7E]'
+              )}
+            >
+              Live Ops (50mm)
+            </button>
+            <button
+              type="button"
+              onClick={() => setOperationalMode('demo_2001')}
+              className={cn(
+                'px-2.5 py-1 rounded-xs cursor-pointer',
+                operationalMode === 'demo_2001' ? 'bg-[#D94343] text-white' : 'text-[#5A6A7E]'
+              )}
+            >
+              2001 Demo (150mm)
+            </button>
           </div>
-        )}
+          {optResult && (
+            <span className="px-2.5 py-1 rounded-sm bg-[#EDF7EE] border border-[#55A85F]/50 text-[#2F6F37] font-sans font-semibold text-[11px]">
+              {activeThresholdMm} mm {operationalMode === 'demo_2001' ? 'Severe Cutoff' : 'Flood Cutoff'}
+            </span>
+          )}
+        </div>
       </div>
+
+      {optResult && (
+        <div
+          className={cn(
+            'px-4 py-2.5 rounded border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-semibold',
+            optResult.equityStatus === 'RISK_TRANSFER_CONCERN' || optResult.optimizedResult.risk_transfer?.flagged
+              ? 'bg-[#FBEBEB] border-[#D94343] text-[#A12323]'
+              : 'bg-[#EDF7EE] border-[#55A85F] text-[#2F6F37]'
+          )}
+        >
+          <span>
+            {optResult.baselineResult.metrics.exposed_area_km2 <= 0 &&
+            optResult.baselineResult.metrics.buildings_exposed === 0
+              ? '✅ No Flood Risk Modeled: Mitigation solutions are not required under current dry conditions.'
+              : optResult.equityStatus === 'RISK_TRANSFER_CONCERN' ||
+                  optResult.optimizedResult.risk_transfer?.flagged
+                ? '⚠️ Risk Transfer Warning: Downstream Rawalpindi exposure exceeded tolerance.'
+                : PILOT_CONFIG.equity_pass_banner}
+          </span>
+          <span className="font-mono text-[11px]">
+            Buildings Saved: {Math.max(0, optResult.baselineResult.metrics.buildings_exposed - optResult.optimizedResult.metrics.buildings_exposed)} · Area Reduction: -
+            {optResult.baselineResult.metrics.exposed_area_km2 > 0
+              ? (((optResult.baselineResult.metrics.exposed_area_km2 - optResult.optimizedResult.metrics.exposed_area_km2) / optResult.baselineResult.metrics.exposed_area_km2) * 100).toFixed(1)
+              : '0.0'}
+            %
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <MunicipalPanel
@@ -135,23 +186,25 @@ export function MitigationOptimizer() {
             </div>
             <input
               type="range"
-              min={10_000_000}
-              max={350_000_000}
+              aria-label="Optimizer budget slider"
+              min={50_000_000}
+              max={300_000_000}
               step={5_000_000}
-              value={optConfig.budgetPkr}
-              onChange={(e) =>
-                setOptConfig((prev) => ({
-                  ...prev,
-                  budgetPkr: Number(e.target.value),
-                }))
-              }
+              value={Math.min(300_000_000, Math.max(50_000_000, optConfig.budgetPkr))}
+              onChange={(e) => setPitchBudgetPkr(Number(e.target.value))}
               className="w-full"
             />
+            <div className="flex items-center justify-between text-[10px] font-mono text-[#5A6A7E]">
+              <span>PKR 50M</span>
+              <span>PKR 150M</span>
+              <span>PKR 200M</span>
+              <span>PKR 300M</span>
+            </div>
             <div className="flex items-center gap-2">
               <input
                 type="number"
-                min={10_000_000}
-                max={400_000_000}
+                min={50_000_000}
+                max={300_000_000}
                 step={5_000_000}
                 value={optConfig.budgetPkr}
                 onChange={(e) => {
@@ -161,11 +214,7 @@ export function MitigationOptimizer() {
                   }
                 }}
                 onBlur={(e) => {
-                  const clamped = Math.min(
-                    400_000_000,
-                    Math.max(10_000_000, Number(e.target.value) || 10_000_000)
-                  );
-                  setOptConfig((prev) => ({ ...prev, budgetPkr: clamped }));
+                  setPitchBudgetPkr(Number(e.target.value) || 50_000_000);
                 }}
                 className="flex-1 px-2.5 py-1.5 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] font-mono text-xs text-[#26364A]"
               />
@@ -260,7 +309,7 @@ export function MitigationOptimizer() {
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                Optimize Investment Portfolio
+                Run Budget Optimization
               </>
             )}
           </button>
@@ -317,7 +366,9 @@ export function MitigationOptimizer() {
                     {optResult.selectedPortfolio.length} Sites
                   </div>
                   <div className="text-[10px] text-[#5A6A7E] mt-0.5">
-                    Out of {optResult.allCandidates.length} evaluated
+                    {optResult.allCandidates.length === 0
+                      ? 'No flood risk — no solution needed'
+                      : `Out of ${optResult.allCandidates.length} evaluated`}
                   </div>
                 </PanelCard>
 

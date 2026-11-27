@@ -417,3 +417,182 @@ export function buildNullahLaiTwin(
   twinCache.set(cacheKey, twin);
   return twin;
 }
+
+interface RealTwinJsonPayload {
+  rows: number;
+  cols: number;
+  cell_size_m: number;
+  crs: string;
+  dem: number[];
+  f_imp: number[];
+  land_cover: number[];
+  population: number[];
+  buildings: number[];
+  roads: number[];
+  zones: number[];
+  facilities: Record<string, number[]>;
+}
+
+let realTwinPromise: Promise<TwinGrid> | null = null;
+
+/**
+ * Loads the real 200x200 (6 km x 6 km, EPSG:32643) Nullah Lai dataset exported
+ * from data/processed/clipped/ into the TwinGrid contract.
+ */
+export async function loadRealClippedTwin(): Promise<TwinGrid> {
+  if (realTwinPromise) return realTwinPromise;
+
+  realTwinPromise = (async () => {
+    const res = await fetch('/real_twin_200x200.json');
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} loading real_twin_200x200.json`);
+    }
+    const raw: RealTwinJsonPayload = await res.json();
+    const { rows, cols } = raw;
+    const total = rows * cols;
+    const bbox = PILOT_CONFIG.studyAreas.nullah_lai_basin.bbox_wgs84;
+
+    const dem = Float64Array.from(raw.dem);
+    const f_imp = Float64Array.from(raw.f_imp);
+    const land_cover = Int32Array.from(raw.land_cover);
+    const population = Float64Array.from(raw.population);
+    const buildings = Int32Array.from(raw.buildings);
+    const roads = Uint8Array.from(raw.roads);
+    const zones = Int32Array.from(raw.zones);
+    const road_segments = new Int32Array(total);
+    for (let i = 0; i < total; i++) {
+      if (roads[i]) {
+        const r = Math.floor(i / cols);
+        road_segments[i] = Math.min(5, Math.floor((r / rows) * 5) + 1);
+      }
+    }
+
+    // Build ZoneMeta for Zone 1 (Upstream Islamabad) and Zone 2 (Downstream Rawalpindi)
+    const zoneSpecs: Array<{
+      id: number;
+      name: string;
+      sector: 'Islamabad' | 'Rawalpindi';
+      density: string;
+    }> = [
+      {
+        id: 1,
+        name: 'Upstream Tehsil (Islamabad)',
+        sector: 'Islamabad',
+        density: 'Upper Catchment & Sectors',
+      },
+      {
+        id: 2,
+        name: 'Downstream Tehsil (Rawalpindi)',
+        sector: 'Rawalpindi',
+        density: 'Dense Urban Corridor',
+      },
+    ];
+
+    const zone_meta: ZoneMeta[] = zoneSpecs.map((zs) => {
+      let minR = rows;
+      let maxR = 0;
+      let minC = cols;
+      let maxC = 0;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (zones[r * cols + c] === zs.id) {
+            if (r < minR) minR = r;
+            if (r > maxR) maxR = r;
+            if (c < minC) minC = c;
+            if (c > maxC) maxC = c;
+          }
+        }
+      }
+      const nw = cellToLatLon(minR, minC, rows, cols, bbox);
+      const se = cellToLatLon(maxR, maxC, rows, cols, bbox);
+      return {
+        id: zs.id,
+        name: zs.name,
+        sector: zs.sector,
+        bounds: { south: se.lat, west: nw.lon, north: nw.lat, east: se.lon },
+        polygon: [
+          [nw.lat, nw.lon],
+          [nw.lat, se.lon],
+          [se.lat, se.lon],
+          [se.lat, nw.lon],
+        ],
+        populationDensityLabel: zs.density,
+      };
+    });
+
+    const facilities: Record<string, Uint8Array> = {
+      hospital: raw.facilities.hospital ? Uint8Array.from(raw.facilities.hospital) : new Uint8Array(total),
+      school: raw.facilities.school ? Uint8Array.from(raw.facilities.school) : new Uint8Array(total),
+      rescue_1122: new Uint8Array(total),
+      substation: new Uint8Array(total),
+      wasa_station: new Uint8Array(total),
+    };
+
+    // Anchor the 12 named municipal stations onto the 200x200 coordinate frame
+    const facility_records: FacilityRecord[] = FACILITY_BLUEPRINTS.map((fb) => {
+      const r = Math.min(rows - 2, Math.max(1, Math.round(fb.rNorm * (rows - 1))));
+      const c = Math.min(cols - 2, Math.max(1, Math.round(fb.cNorm * (cols - 1))));
+      const idx = r * cols + c;
+      facilities[fb.type][idx] = 1;
+      const { lat, lon } = cellToLatLon(r, c, rows, cols, bbox);
+      const zId = zones[idx] || 2;
+      const zName = zone_meta.find((z) => z.id === zId)?.name ?? `Zone ${zId}`;
+      return {
+        id: fb.id,
+        name: fb.name,
+        type: fb.type,
+        row: r,
+        col: c,
+        lat,
+        lon,
+        zoneId: zId,
+        zoneName: zName,
+      };
+    });
+
+    // Extract thalweg polyline by tracing lowest DEM elevation per row band
+    const mainStreamCoords: Array<[number, number]> = [];
+    for (let r = 0; r < rows; r += 4) {
+      let minElev = Infinity;
+      let bestC = Math.floor(cols / 2);
+      for (let c = Math.floor(cols * 0.25); c < Math.floor(cols * 0.75); c++) {
+        const e = dem[r * cols + c];
+        if (e < minElev) {
+          minElev = e;
+          bestC = c;
+        }
+      }
+      const pt = cellToLatLon(r, bestC, rows, cols, bbox);
+      mainStreamCoords.push([pt.lat, pt.lon]);
+    }
+
+    const syntheticTemplate = buildNullahLaiTwin('nullah_lai_basin', 42);
+
+    return {
+      studyAreaId: 'nullah_lai_basin',
+      rows,
+      cols,
+      bbox_wgs84: bbox,
+      dem,
+      land_cover,
+      f_imp,
+      population,
+      buildings,
+      roads,
+      road_segments,
+      zones,
+      facilities,
+      zone_meta,
+      facility_records,
+      waterway_paths: [
+        { name: 'Nullah Lai Main Channel (DEM Thalweg)', coords: mainStreamCoords },
+      ],
+      road_corridors: syntheticTemplate.road_corridors,
+      cell_size_m: raw.cell_size_m,
+      crs: raw.crs,
+      seed: 200,
+    };
+  })();
+
+  return realTwinPromise;
+}

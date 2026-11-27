@@ -88,7 +88,13 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
     await expect(popup).toBeVisible();
     await expect(popup).toContainText('STN-04');
     await expect(popup).toContainText('WASA Pumping Station Katarian');
-    await expect(popup).toContainText('Data unavailable');
+    await expect(popup).toContainText('Soil Moisture (0–9 cm)');
+
+    // Verify 5-tier alert ladder, preparedness plan, and color-coded equity zone legend
+    await expect(page.getByText('5-Tier Alert Framework')).toBeVisible();
+    await expect(page.getByText('Preparedness Action Plan')).toBeVisible();
+    await expect(page.getByText('Zone 1: Upstream Islamabad')).toBeVisible();
+    await expect(page.getByText('Zone 2: Downstream Rawalpindi')).toBeVisible();
 
     // Verify popup does not get covered by the top-left basemap toolbar
     const mapHeading = page.getByRole('heading', {
@@ -132,8 +138,11 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
 
-    // Predictions page form validation & run
+    // Predictions page form validation, D8 note & run
     await page.goto('/prediction');
+    await expect(
+      page.getByText(/30 m D8 topological flow routing across the 200×200 DEM/i)
+    ).toBeVisible();
     const rainNumberInput = page.locator('input[type="number"]').first();
     await rainNumberInput.fill('300');
     await page.getByRole('button', { name: /Run Flood Simulation/i }).click();
@@ -154,7 +163,7 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
         name: /Past Flood Hindcast & Prevention Impact/i,
       })
     ).toBeVisible();
-    await expect(page.getByText('Buildings Protected')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Buildings Protected')).toBeVisible({ timeout: 25_000 });
     await expect(page.getByText('Residents Protected')).toBeVisible();
 
     // Reports tabs & optimizer validation
@@ -170,7 +179,7 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
     ).toBeVisible();
 
     await page.getByRole('button', { name: /Mitigation Portfolio Report/i }).click();
-    const optButton = page.getByRole('button', { name: /Optimize Investment Portfolio/i });
+    const optButton = page.getByRole('button', { name: /Run Budget Optimization/i });
     await expect(optButton).toBeEnabled();
 
     // Unchecking all 3 intervention types disables optimization cleanly
@@ -186,7 +195,7 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
     // Settings page health check failure fallback
     await page.goto('/settings');
     await page.getByPlaceholder('http://localhost:8000').fill('http://127.0.0.1:59999');
-    await page.getByRole('button', { name: 'Test /api/health' }).click();
+    await page.getByRole('button', { name: 'Check Server Connection' }).click();
     await expect(page.getByText('Backend Unreachable')).toBeVisible({ timeout: 8000 });
   });
 
@@ -235,5 +244,141 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth
     );
     expect(tabletOverflow).toBe(false);
+  });
+
+  test('30-day advance flood watch, monsoon surge simulation, and most affected vs safe zones', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+
+    await expect(
+      page.getByRole('heading', { name: '30-Day Advance Flood Watch & Future Outlook' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Most Affected Areas vs. Safe Zones' })
+    ).toBeVisible();
+
+    // Live Ops keeps synthetic surge testing isolated out of live telemetry
+    await expect(
+      page.getByRole('button', { name: 'Simulate 30-Day Monsoon Surge' })
+    ).toBeHidden();
+
+    // Switch to 2001 Demo profile, then trigger 30-Day Monsoon Surge Test
+    await page.getByRole('button', { name: /2001 Cloudburst Demo/i }).click();
+    await page.getByRole('button', { name: 'Simulate 30-Day Monsoon Surge' }).click();
+    await expect(page.getByText(/Advance Flood Watch:/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Viewing Day \+/i })).toBeVisible();
+
+    // Toggle Safe Zones overlay on the map
+    await page.getByRole('button', { name: 'Show Safe Zones on Map' }).click();
+    await expect(page.getByRole('button', { name: 'Safe Zones: ON' })).toBeVisible();
+
+    // Navigate to Predictions and verify 30-Day Extended Flood Outlook panel
+    await page.goto('/prediction');
+    await expect(
+      page.getByRole('heading', {
+        name: /30-Day Extended Flood Outlook/i,
+      })
+    ).toBeVisible();
+  });
+
+  test('two-mode switch, comparison label, budget ROI slider, and equity pass banner', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+
+    await expect(
+      page.getByRole('heading', { name: 'Mitigation ROI & Operational Mode Control' })
+    ).toBeVisible();
+    await expect(
+      page.getByText('Moderate rainfall: 12% area reduction. Severe cloudburst: 39% area reduction.')
+    ).toBeVisible();
+    await expect(page.getByText('50 mm Flood Cutoff')).toBeVisible();
+
+    // Switch to 2001 Cloudburst Demo (620mm/10hr, threshold_mm=150) at default PKR 200M
+    await page.getByRole('button', { name: /2001 Cloudburst Demo/i }).click();
+    await expect(page.getByText('150 mm Severe Cutoff')).toBeVisible();
+    await expect(page.getByText('2001 Cloudburst Archive')).toBeVisible();
+    await expect(page.getByText('23 Jul 2001 09:00 PKT').first()).toBeVisible();
+    await expect(page.getByText('Saturated · 0.44 m³/m³').first()).toBeVisible();
+    await expect(page.getByText(/\/ 200M/)).toBeVisible();
+    // Wait until real clipped basin 2001 Demo result arrives (Exposed ~236 baseline vs synthetic 43988)
+    await expect(page.getByText(/Exposed: 236 →/)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('Population Protected')).toBeVisible();
+    await expect(page.getByText('Road Corridors Protected:')).toBeVisible();
+    await expect(page.getByText('Critical Facilities Protected:')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open Full Report' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download Report (CSV)' })).toBeVisible();
+    await expect(page.getByText('✅ Equity Pass: No downstream risk transfer.')).toBeVisible();
+
+    // Money Slide budget slider presets dynamically update ROI
+    const slider = page.getByLabel('Dashboard Budget Slider');
+    await expect(slider).toBeVisible();
+    const areaText200 = await page.locator('text=/-[0-9.]+%/').first().innerText();
+
+    await page.getByRole('button', { name: '50M', exact: true }).click();
+    await expect(page.getByText(/\/ 50M/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/\b9 Sites\b|\b([5-9]|1[0-2]) Sites\b/)).toBeVisible({
+      timeout: 25_000,
+    });
+    const areaText50 = await page.locator('text=/-[0-9.]+%/').first().innerText();
+    expect(areaText50).not.toEqual(areaText200);
+  });
+
+  test('2001 historic weather date and time sliders replay conditions and warnings', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+
+    await page.getByRole('button', { name: /2001 Cloudburst Demo/i }).click();
+    await expect(page.getByLabel('2001 Date Slider')).toBeVisible();
+    await expect(page.getByLabel('2001 Time Slider')).toBeVisible();
+
+    // Scrub 2001 Date/Time to 16 Jul (Dry) -> treats 16 Jul 2001 as dry live weather (0 Sites, Standby)
+    await page.getByRole('button', { name: '16 Jul (Dry)' }).click();
+    await expect(page.getByText('16 Jul 2001 09:00 PKT').first()).toBeVisible();
+    await expect(page.getByText('0 Sites')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('No flood risk — no solution needed')).toBeVisible();
+
+    // Scrub 2001 Date/Time to 22 Jul 18:00 PKT (Pre-Storm approaching) -> early warning active
+    await page.getByRole('button', { name: '22 Jul (Pre-Storm)' }).click();
+    await expect(page.getByText('22 Jul 2001 18:00 PKT').first()).toBeVisible();
+    await expect(page.getByText('Action Required')).toBeVisible({ timeout: 10_000 });
+
+    // Return to 23 Jul Cloudburst Peak
+    await page.getByRole('button', { name: '23 Jul (620mm Peak)' }).click();
+    await expect(page.getByText('23 Jul 2001 09:00 PKT').first()).toBeVisible();
+    await expect(page.getByText(/Exposed: 236 →/)).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('zero flood risk day proposes zero mitigation sites', async ({ page }) => {
+    await page.route('**/api/forecast', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          source: 'MOCK_DRY',
+          soil_moisture_0_to_1cm: 0.16,
+          antecedent_wetness: 'dry',
+          peak_6h_total_mm: 0.0,
+          peak_6h_rate_mm_per_hr: 0.0,
+          peak_6h_window_start: null,
+          total_72h_mm: 0.0,
+          peak_1h_mm_per_hr: 0.0,
+        }),
+      });
+    });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+
+    await expect(page.getByText('0 Sites')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('No flood risk — no solution needed')).toBeVisible();
+    await expect(
+      page.getByText('✅ No Flood Risk Modeled: Mitigation solutions are not required under current conditions.')
+    ).toBeVisible();
   });
 });

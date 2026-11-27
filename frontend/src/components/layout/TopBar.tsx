@@ -66,6 +66,9 @@ export function FloodForgeMunicipalLogo() {
 
 export function TopBar() {
   const {
+    operationalMode,
+    setOperationalMode,
+    monsoonStressMode,
     weather,
     isSyncingWeather,
     refreshWeather,
@@ -77,18 +80,19 @@ export function TopBar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
-  const isLiveWeather = weather.source === 'OPEN_METEO_LIVE';
+  const isHistoric2001 = operationalMode === 'demo_2001' && !monsoonStressMode;
+  const isLiveWeather = !isHistoric2001 && weather.source === 'OPEN_METEO_LIVE';
 
   return (
     <header className="sticky top-0 z-40 bg-[#FFFFFF] border-b border-[#D6DCE4] shadow-[0_1px_3px_rgba(23,60,121,0.06)]">
       <div className="max-w-[1760px] mx-auto px-3 sm:px-5 h-14 flex items-center justify-between gap-3">
         {/* Left: Branding + Horizontal Municipal Navigation */}
-        <div className="flex items-center gap-5 min-w-0">
+        <div className="flex items-center gap-3 xl:gap-5 min-w-0">
           <FloodForgeMunicipalLogo />
 
           <nav
             aria-label="Primary navigation"
-            className="hidden lg:flex items-center gap-1"
+            className="hidden lg:flex items-center gap-0.5 xl:gap-1"
           >
             {TOP_NAV_ITEMS.map((item) => {
               const Icon = item.icon;
@@ -99,7 +103,7 @@ export function TopBar() {
                   end={item.to === '/'}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold transition-colors whitespace-nowrap border-b-2',
+                      'flex items-center gap-1.5 px-2 xl:px-3 py-1.5 rounded-sm text-xs font-semibold transition-colors whitespace-nowrap border-b-2',
                       isActive
                         ? 'text-[#173C79] bg-[#EEF3FA] border-[#173C79]'
                         : 'text-[#26364A] border-transparent hover:text-[#173C79] hover:bg-[#F5F6F7]'
@@ -114,18 +118,57 @@ export function TopBar() {
           </nav>
         </div>
 
-        {/* Right: Sync Status, Timestamp, Notifications, Mobile Menu */}
-        <div className="flex items-center gap-2">
+        {/* Right: Two-Mode Switch, Sync Status, Timestamp, Notifications */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div
+            role="group"
+            aria-label="Operational mode switch"
+            className="hidden 2xl:flex items-center rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] p-0.5 text-[11px] font-semibold"
+          >
+            <button
+              type="button"
+              onClick={() => setOperationalMode('live_ops')}
+              className={cn(
+                'px-2 py-1 rounded-xs transition-colors cursor-pointer whitespace-nowrap',
+                operationalMode === 'live_ops'
+                  ? 'bg-[#173C79] text-white'
+                  : 'text-[#5A6A7E] hover:text-[#173C79]'
+              )}
+            >
+              Live Ops (50mm)
+            </button>
+            <button
+              type="button"
+              onClick={() => setOperationalMode('demo_2001')}
+              className={cn(
+                'px-2 py-1 rounded-xs transition-colors cursor-pointer whitespace-nowrap',
+                operationalMode === 'demo_2001'
+                  ? 'bg-[#D94343] text-white'
+                  : 'text-[#5A6A7E] hover:text-[#D94343]'
+              )}
+            >
+              2001 Demo (150mm)
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => refreshWeather()}
-            disabled={isSyncingWeather}
-            title="Synchronize Open-Meteo telemetry for Nullah Lai (33.65°N, 73.06°E)"
+            disabled={isSyncingWeather || isHistoric2001}
+            title={
+              isHistoric2001
+                ? 'July 23, 2001 Islamabad-Rawalpindi historical cloudburst weather archive active'
+                : 'Synchronize Open-Meteo telemetry for Nullah Lai (33.65°N, 73.06°E)'
+            }
             className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer',
-              isLiveWeather
-                ? 'bg-[#EDF7EE] border-[#55A85F]/60 text-[#2F6F37] hover:bg-[#E1F2E3]'
-                : 'bg-[#FEF9E7] border-[#E0B422]/70 text-[#8A6700] hover:bg-[#FCF3CF]'
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border text-[11px] font-semibold whitespace-nowrap transition-colors',
+              isHistoric2001
+                ? 'bg-[#FBEBEB] border-[#D94343]/60 text-[#A12323] cursor-default'
+                : isLiveWeather
+                  ? 'bg-[#EDF7EE] border-[#55A85F]/60 text-[#2F6F37] hover:bg-[#E1F2E3] cursor-pointer'
+                  : monsoonStressMode
+                    ? 'bg-[#FDF1E7] border-[#EF8735]/70 text-[#A64D0B] hover:bg-[#FCE6D2] cursor-pointer'
+                    : 'bg-[#FEF9E7] border-[#E0B422]/70 text-[#8A6700] hover:bg-[#FCF3CF] cursor-pointer'
             )}
           >
             <RefreshCw
@@ -134,9 +177,13 @@ export function TopBar() {
             <span className="hidden sm:inline">
               {isSyncingWeather
                 ? 'Syncing...'
-                : isLiveWeather
-                  ? 'Open-Meteo Live'
-                  : 'Fallback Data'}
+                : isHistoric2001
+                  ? '2001 Cloudburst Archive'
+                  : isLiveWeather
+                    ? 'Open-Meteo Live'
+                    : monsoonStressMode
+                      ? 'Monsoon Surge Test'
+                      : 'Fallback Data'}
             </span>
           </button>
 

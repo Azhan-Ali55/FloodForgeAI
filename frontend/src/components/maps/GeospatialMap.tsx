@@ -20,7 +20,10 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { latLonToUtm43N, PILOT_CONFIG, STATION_RISK_META } from '../../engine/pilotConfig';
-import { renderRasterOverlayDataUrl } from '../../services/mapService';
+import {
+  renderRasterOverlayDataUrl,
+  renderSafeZonesOverlayDataUrl,
+} from '../../services/mapService';
 import type {
   AlertTier,
   BasemapStyle,
@@ -131,6 +134,43 @@ function renderVegetationBaseUrl(twin: TwinGrid): string {
   return canvas.toDataURL();
 }
 
+/**
+ * Generates a subtle translucent Zone 1 (Upstream Islamabad - Blue) vs.
+ * Zone 2 (Downstream Rawalpindi - Amber) raster tint from twin.zones.
+ */
+function renderZoneOverlayDataUrl(twin: TwinGrid): string {
+  const { rows, cols, zones } = twin;
+  const canvas = document.createElement('canvas');
+  canvas.width = cols;
+  canvas.height = rows;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+  const img = ctx.createImageData(cols, rows);
+  const data = img.data;
+
+  for (let i = 0; i < rows * cols; i++) {
+    const p = i * 4;
+    const z = zones[i];
+    if (z === 1) {
+      // Zone 1: Upstream Islamabad (#173C79 Blue tint)
+      data[p] = 23;
+      data[p + 1] = 60;
+      data[p + 2] = 121;
+      data[p + 3] = 40;
+    } else if (z >= 2) {
+      // Zone 2: Downstream Rawalpindi (#EF8735 Amber tint)
+      data[p] = 239;
+      data[p + 1] = 135;
+      data[p + 2] = 53;
+      data[p + 3] = 40;
+    } else {
+      data[p + 3] = 0;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL();
+}
+
 function StationPopupCard({
   station,
   onClose,
@@ -231,10 +271,10 @@ function StationPopupCard({
         <div className="flex items-center justify-between">
           <span className="text-[#5A6A7E] flex items-center gap-1">
             <Droplets className="w-3 h-3 text-[#244D8F]" />
-            Water Temp
+            Soil Moisture (0–9 cm)
           </span>
-          <span className="font-mono text-[#5A6A7E]">
-            {station.waterTempC !== null ? `${station.waterTempC.toFixed(1)} °C` : 'Data unavailable'}
+          <span className="font-mono font-semibold text-[#173C79]">
+            {station.soilMoistureLabel}
           </span>
         </div>
         <div className="flex items-center justify-between">
@@ -293,7 +333,9 @@ export function GeospatialMap({
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const vegOverlayRef = useRef<L.ImageOverlay | null>(null);
+  const zoneOverlayRef = useRef<L.ImageOverlay | null>(null);
   const imageOverlayRef = useRef<L.ImageOverlay | null>(null);
+  const safeZoneOverlayRef = useRef<L.ImageOverlay | null>(null);
   const vectorGroupRef = useRef<L.LayerGroup | null>(null);
   const stationGroupRef = useRef<L.LayerGroup | null>(null);
   const popupRef = useRef<L.Popup | null>(null);
@@ -375,6 +417,7 @@ export function GeospatialMap({
       mapRef.current = null;
       tileLayerRef.current = null;
       vegOverlayRef.current = null;
+      zoneOverlayRef.current = null;
       imageOverlayRef.current = null;
       vectorGroupRef.current = null;
       stationGroupRef.current = null;
@@ -418,6 +461,7 @@ export function GeospatialMap({
       const layer = L.tileLayer(spec.url, {
         attribution: spec.attribution,
         maxZoom: 18,
+        maxNativeZoom: basemap === 'satellite' ? 15 : 18,
         className: spec.className ?? '',
       });
       layer.addTo(map);
@@ -473,6 +517,56 @@ export function GeospatialMap({
       imageOverlayRef.current = overlay;
     }
   }, [rasterVisible, rasterDataUrl, twin.bbox_wgs84, rasterOpacity]);
+
+  // Safe High-Ground Zones overlay (<25 mm runoff)
+  const safeZoneDataUrl = useMemo(() => {
+    if (!layers.safe_zones) return '';
+    return renderSafeZonesOverlayDataUrl(twin, simResult);
+  }, [layers.safe_zones, twin, simResult]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (safeZoneOverlayRef.current) {
+      map.removeLayer(safeZoneOverlayRef.current);
+      safeZoneOverlayRef.current = null;
+    }
+    if (layers.safe_zones && safeZoneDataUrl) {
+      const { south, west, north, east } = twin.bbox_wgs84;
+      const bounds = L.latLngBounds([south, west], [north, east]);
+      const overlay = L.imageOverlay(safeZoneDataUrl, bounds, {
+        opacity: 0.65,
+        interactive: false,
+      });
+      overlay.addTo(map);
+      safeZoneOverlayRef.current = overlay;
+    }
+  }, [layers.safe_zones, safeZoneDataUrl, twin.bbox_wgs84]);
+
+  // Color-coded Zone 1 (Upstream Islamabad Blue) & Zone 2 (Downstream Rawalpindi Amber) overlay
+  const zoneDataUrl = useMemo(() => {
+    if (!layers.neighborhoods) return '';
+    return renderZoneOverlayDataUrl(twin);
+  }, [layers.neighborhoods, twin]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (zoneOverlayRef.current) {
+      map.removeLayer(zoneOverlayRef.current);
+      zoneOverlayRef.current = null;
+    }
+    if (layers.neighborhoods && zoneDataUrl) {
+      const { south, west, north, east } = twin.bbox_wgs84;
+      const bounds = L.latLngBounds([south, west], [north, east]);
+      const overlay = L.imageOverlay(zoneDataUrl, bounds, {
+        opacity: 0.85,
+        interactive: false,
+      });
+      overlay.addTo(map);
+      zoneOverlayRef.current = overlay;
+    }
+  }, [layers.neighborhoods, zoneDataUrl, twin.bbox_wgs84]);
 
   // Handle map background click: dismiss active station popup or inspect grid cell
   useEffect(() => {
@@ -556,15 +650,17 @@ export function GeospatialMap({
     if (!group) return;
     group.clearLayers();
 
-    // 1. Neighborhood boundaries + subtle geographic labels
+    // 1. Neighborhood boundaries (Zone 1 Upstream Islamabad Blue vs. Zone 2 Downstream Rawalpindi Amber)
     if (layers.neighborhoods) {
       for (const zm of twin.zone_meta) {
+        const isUpstreamIslamabad = zm.id === 1 || zm.sector === 'Islamabad';
+        const zoneColor = isUpstreamIslamabad ? '#173C79' : '#EF8735';
         const poly = L.polygon(zm.polygon, {
-          color: '#738A7B',
-          weight: 1.0,
-          dashArray: '4 4',
-          fillColor: '#55A85F',
-          fillOpacity: 0.03,
+          color: zoneColor,
+          weight: 1.5,
+          dashArray: '5 4',
+          fillColor: zoneColor,
+          fillOpacity: 0.04,
         });
         poly.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
@@ -1045,6 +1141,7 @@ export function GeospatialMap({
                       ['neighborhoods', 'Ward Boundaries & Labels'],
                       ['roads', 'Road Corridors'],
                       ['buildings', 'Exposed Building Clusters'],
+                      ['safe_zones', 'Safe High-Ground Zones (<25 mm)'],
                       ['interventions', 'Mitigation Sites'],
                     ] as Array<[keyof MapLayerVisibility, string]>
                   ).map(([key, label]) => (
@@ -1055,7 +1152,7 @@ export function GeospatialMap({
                       <span>{label}</span>
                       <input
                         type="checkbox"
-                        checked={layers[key]}
+                        checked={Boolean(layers[key])}
                         onChange={() => onToggleLayer(key)}
                         className="rounded border-[#CBD5E1] accent-[#173C79]"
                       />
@@ -1134,7 +1231,7 @@ export function GeospatialMap({
             : formatCoord(studyCfg.center[0], studyCfg.center[1])}
         </span>
         <span className="text-[#CBD5E1]">|</span>
-        <span className="text-[#5A6A7E]">EPSG:32643 · 30m</span>
+        <span className="text-[#5A6A7E]">Nullah Lai Basin</span>
       </div>
 
       {/* Bottom-Right: Municipal Map Legend */}
@@ -1144,7 +1241,7 @@ export function GeospatialMap({
             <span className="font-semibold text-[10px] uppercase tracking-wider text-[#173C79]">
               Station Risk &amp; Map Key
             </span>
-            <span className="font-mono text-[9px] text-[#5A6A7E]">30m D8</span>
+            <span className="font-mono text-[9px] text-[#5A6A7E]">Flood Risk</span>
           </div>
 
           <div className="grid grid-cols-2 gap-1.5 text-[10px] text-[#26364A]">
@@ -1163,6 +1260,17 @@ export function GeospatialMap({
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#D94343] border border-white shadow-xs" />
               <span>Critical</span>
+            </div>
+          </div>
+
+          <div className="pt-1.5 border-t border-[#E6EAEF] space-y-1 text-[10px] text-[#26364A]">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#173C79] border border-white shadow-xs flex-shrink-0" />
+              <span>Zone 1: Upstream Islamabad</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#EF8735] border border-white shadow-xs flex-shrink-0" />
+              <span>Zone 2: Downstream Rawalpindi</span>
             </div>
           </div>
 

@@ -19,11 +19,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <strong className="text-[#173C79] font-semibold">
                 Municipal Decision-Support Portal:
               </strong>{' '}
-              Nullah Lai 30 m D8 screening model (EPSG:32643). Cross-verify operational alerts with official PMD &amp; NDMA hydrometric bulletins.
+              Nullah Lai basin flood screening portal. Cross-verify operational alerts with official PMD &amp; NDMA bulletins.
             </span>
           </div>
           <span className="hidden md:inline-block font-mono text-[10px] px-2 py-0.5 rounded-sm bg-white border border-[#D6DCE4] text-[#173C79] flex-shrink-0">
-            Rawalpindi–Islamabad · 30m EPSG:32643
+            Rawalpindi–Islamabad Basin
           </span>
         </div>
       </div>

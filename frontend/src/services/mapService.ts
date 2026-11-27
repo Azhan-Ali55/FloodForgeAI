@@ -146,3 +146,45 @@ export function renderRasterOverlayDataUrl(
   ctx.putImageData(img, 0, 0);
   return canvas.toDataURL();
 }
+
+/**
+ * Renders a crisp high-ground Safe Zones (<25 mm runoff) overlay for evacuation & staging guidance.
+ */
+export function renderSafeZonesOverlayDataUrl(
+  twin: TwinGrid,
+  simResult: SimResult
+): string {
+  const { rows, cols, dem } = twin;
+  const canvas = document.createElement('canvas');
+  canvas.width = cols;
+  canvas.height = rows;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+
+  const img = ctx.createImageData(cols, rows);
+  const data = img.data;
+  const acc = simResult.accumulation_mm;
+
+  let minDem = Infinity;
+  let maxDem = -Infinity;
+  for (let i = 0; i < dem.length; i++) {
+    if (dem[i] < minDem) minDem = dem[i];
+    if (dem[i] > maxDem) maxDem = dem[i];
+  }
+  const midDem = minDem + (maxDem - minDem) * 0.35;
+
+  for (let i = 0; i < rows * cols; i++) {
+    const p = i * 4;
+    if (acc[i] < 25 && dem[i] >= midDem) {
+      data[p] = 85;
+      data[p + 1] = 168;
+      data[p + 2] = 95;
+      data[p + 3] = 95;
+    } else {
+      data[p + 3] = 0;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL();
+}

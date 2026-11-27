@@ -6,7 +6,10 @@
 export type EngineMode = 'local' | 'api';
 
 export const DEFAULT_API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== 'undefined' && window.location.hostname === '127.0.0.1'
+    ? 'http://127.0.0.1:8000'
+    : 'http://localhost:8000');
 
 export const DEFAULT_ENGINE_MODE: EngineMode =
   import.meta.env.VITE_DEFAULT_ENGINE_MODE === 'api' ? 'api' : 'local';
@@ -27,6 +30,14 @@ export async function apiRequest<T>(
   timeoutMs = 8000
 ): Promise<T> {
   const controller = new AbortController();
+  const extSignal = options.signal;
+  if (extSignal) {
+    if (extSignal.aborted) {
+      controller.abort();
+    } else {
+      extSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const url = `${baseUrl.replace(/\/$/, '')}${path}`;
 

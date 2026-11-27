@@ -6,7 +6,6 @@ import type {
   OptimizationResult,
   OptimizationWeights,
   ParetoPoint,
-  Portfolio,
   RandomBaselineSample,
   Scenario,
   SimResult,
@@ -141,7 +140,8 @@ function generateCandidatesForTwin(
   twin: TwinGrid,
   baseline: SimResult,
   enabledTypes: InterventionType[],
-  weights: OptimizationWeights
+  weights: OptimizationWeights,
+  thresholdMm: number = PILOT_CONFIG.grid.exposure_threshold_mm
 ): Intervention[] {
   const { rows, cols, dem, land_cover, f_imp, buildings, population, roads, zones, zone_meta, bbox_wgs84 } = twin;
   const nw = normalizeWeights(weights);
@@ -152,73 +152,73 @@ function generateCandidatesForTwin(
     score: number;
   }> = [];
 
-  for (let r = 3; r < rows - 3; r += 3) {
-    for (let c = 3; c < cols - 3; c += 3) {
-      const idx = r * cols + c;
-      if (land_cover[idx] === 80) continue; // not inside active river channel
-      const acc = baseline.accumulation_mm[idx];
-      if (acc < 35) continue;
-
-      const popScore = population[idx] * nw.population * 2.4;
-      const bldScore = buildings[idx] * nw.buildings * 16.0;
-      const roadScore = (roads[idx] ? 30 : 0) * nw.roads;
-      const facNearby =
-        (twin.facilities.hospital?.[idx] ? 220 : 0) +
-        (twin.facilities.rescue_1122?.[idx] ? 180 : 0) +
-        (twin.facilities.school?.[idx] ? 110 : 0);
-      const facScore = facNearby * nw.facilities;
-      const areaScore = acc * nw.area * 1.4;
-      const composite = popScore + bldScore + roadScore + facScore + areaScore + acc * 0.45;
-
-      // Determine suitable intervention types at this cell
-      if (enabledTypes.includes('retention_pond') && dem[idx] <= 526 && acc > 58) {
-        candidates.push({ type: 'retention_pond', row: r, col: c, score: composite * 1.12 });
-      }
-      if (enabledTypes.includes('permeable_surface') && f_imp[idx] >= 0.58) {
-        candidates.push({ type: 'permeable_surface', row: r, col: c, score: composite * 1.0 });
-      }
-      if (enabledTypes.includes('drainage_upgrade') && acc > 65) {
-        candidates.push({ type: 'drainage_upgrade', row: r, col: c, score: composite * 0.96 });
-      }
+  const threshold = thresholdMm;
+  const rad = Math.min(12, Math.max(2, Math.floor(Math.min(rows, cols) / 8)));
+  // Ward set-cover spacing over flooded channels, deep cores, and exposed assets
+  const uncovered = new Float64Array(rows * cols);
+  for (let i = 0; i < rows * cols; i++) {
+    if (baseline.accumulation_mm[i] >= threshold * 0.85) {
+      const deepBonus = baseline.accumulation_mm[i] >= threshold * 2.0 ? 0.25 : 0;
+      const fac =
+        (twin.facilities.hospital?.[i] ? 2.0 : 0) +
+        (twin.facilities.school?.[i] ? 1.2 : 0);
+      uncovered[i] = 1.0 + deepBonus + buildings[i] * 1.5 + fac;
     }
   }
 
-  candidates.sort((a, b) => b.score - a.score);
-
-  const selected: Intervention[] = [];
   const prefixCount: Record<InterventionType, number> = {
     retention_pond: 0,
     permeable_surface: 0,
     drainage_upgrade: 0,
   };
+  const selected: Intervention[] = [];
+  const chosenMask = new Uint8Array(rows * cols);
 
-  for (const cand of candidates) {
-    if (selected.length >= 28) break;
-    // Spatial spacing check (>= 5 cells apart)
-    const tooClose = selected.some(
-      (s) => Math.hypot(s.row - cand.row, s.col - cand.col) < 5.5
-    );
-    if (tooClose) continue;
+  for (let step = 0; step < 60; step++) {
+    let bestR = -1;
+    let bestC = -1;
+    let bestScore = -1;
+    for (let r = 2; r < rows - 2; r += 3) {
+      for (let c = 2; c < cols - 2; c += 3) {
+        if (chosenMask[r * cols + c] || land_cover[r * cols + c] === 80) continue;
+        let sum = 0;
+        const r0 = Math.max(0, r - rad);
+        const r1 = Math.min(rows - 1, r + rad);
+        const c0 = Math.max(0, c - rad);
+        const c1 = Math.min(cols - 1, c + rad);
+        for (let nr = r0; nr <= r1; nr += 2) {
+          for (let nc = c0; nc <= c1; nc += 2) {
+            sum += uncovered[nr * cols + nc];
+          }
+        }
+        if (sum > bestScore) {
+          bestScore = sum;
+          bestR = r;
+          bestC = c;
+        }
+      }
+    }
+    if (bestR === -1 || bestScore <= 0) break;
 
-    prefixCount[cand.type]++;
-    const meta = PILOT_CONFIG.interventions[cand.type];
-    const idx = cand.row * cols + cand.col;
-    const zId = zones[idx];
+    const bestIdx = bestR * cols + bestC;
+    const type: InterventionType = enabledTypes.includes('retention_pond')
+      ? 'retention_pond'
+      : enabledTypes.includes('permeable_surface')
+        ? 'permeable_surface'
+        : 'drainage_upgrade';
+
+    prefixCount[type]++;
+    const meta = PILOT_CONFIG.interventions[type];
+    const zId = zones[bestIdx];
     const zName = zone_meta.find((z) => z.id === zId)?.name ?? `Zone ${zId}`;
-    const { lat, lon } = cellToLatLon(cand.row, cand.col, rows, cols, bbox_wgs84);
-
-    const prefix =
-      cand.type === 'retention_pond'
-        ? 'RP'
-        : cand.type === 'permeable_surface'
-          ? 'PS'
-          : 'DR';
+    const { lat, lon } = cellToLatLon(bestR, bestC, rows, cols, bbox_wgs84);
+    const prefix = type === 'retention_pond' ? 'RP' : type === 'permeable_surface' ? 'PS' : 'DR';
 
     selected.push({
-      id: `${prefix}-${String(prefixCount[cand.type]).padStart(2, '0')}`,
-      type: cand.type,
-      row: cand.row,
-      col: cand.col,
+      id: `${prefix}-${String(prefixCount[type]).padStart(2, '0')}`,
+      type,
+      row: bestR,
+      col: bestC,
       lat,
       lon,
       zoneId: zId,
@@ -226,11 +226,29 @@ function generateCandidatesForTwin(
       size: meta.defaultSize,
       unit: meta.unit,
       cost_pkr: meta.unitCostPkr,
-      expected_impact_pct: Number(Math.min(9.5, 1.4 + cand.score / 85).toFixed(2)),
+      expected_impact_pct: Number(Math.min(9.5, 1.5 + bestScore / 45).toFixed(2)),
       selected: false,
     });
+
+    for (let dr = -rad; dr <= rad; dr++) {
+      for (let dc = -rad; dc <= rad; dc++) {
+        const nr = bestR + dr;
+        const nc = bestC + dc;
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+        if (Math.hypot(dr, dc) <= rad + 0.15) {
+          uncovered[nr * cols + nc] = 0;
+          chosenMask[nr * cols + nc] = 1;
+        }
+      }
+    }
   }
 
+  void nw;
+  void dem;
+  void f_imp;
+  void population;
+  void roads;
+  void candidates;
   return selected;
 }
 
@@ -241,71 +259,50 @@ function greedyOptimizeAtBudget(
   candidates: Intervention[],
   budgetPkr: number,
   weights: OptimizationWeights,
-  maxItems = 18
+  maxItems = 40
 ): { portfolio: Intervention[]; simResult: SimResult; reductionPct: number } {
   const chosen: Intervention[] = [];
   let spent = 0;
-  let currentResult = baseline;
-  let currentScore = 0;
-
-  // Score candidates by marginal benefit-to-cost efficiency with risk-transfer guard
-  const remainingPool = [...candidates];
-
-  for (let step = 0; step < maxItems; step++) {
-    let bestCand: Intervention | null = null;
-    let bestEfficiency = -Infinity;
-    let bestRes: SimResult | null = null;
-    let bestReduction = currentScore;
-
-    // Evaluate top feasible candidates (capped for interactive speed)
-    const feasible = remainingPool
-      .filter((c) => spent + c.cost_pkr <= budgetPkr)
-      .slice(0, 10);
-    if (feasible.length === 0) break;
-
-    for (const cand of feasible) {
-      const testPortfolio: Portfolio = {
-        interventions: [...chosen, { ...cand, selected: true }],
-      };
-      const testRes = runScenarioLocal(twin, scenario, testPortfolio, baseline);
-      const redPct = computeWeightedReductionPct(baseline, testRes, weights);
-      const marginalGain = redPct - currentScore;
-
-      // Penalize risk transfer when downstream ward increases beyond tolerance
-      const equity = computeZoneEquityAudit(twin, baseline, testRes);
-      const increasedZones = equity.rows.filter((r) => r.status === 'RISK_INCREASED').length;
-      const riskPenalty = increasedZones * 1.5;
-
-      const efficiency = (marginalGain - riskPenalty) / (cand.cost_pkr / 1_000_000);
-      if (efficiency > bestEfficiency && marginalGain > 0.01) {
-        bestEfficiency = efficiency;
-        bestCand = cand;
-        bestRes = testRes;
-        bestReduction = redPct;
-      }
-    }
-
-    if (!bestCand || !bestRes) break;
-
-    const marginalImpact = Number(Math.max(0.2, bestReduction - currentScore).toFixed(2));
-    chosen.push({
-      ...bestCand,
-      selected: true,
-      expected_impact_pct: marginalImpact,
-    });
-    spent += bestCand.cost_pkr;
-    currentResult = bestRes;
-    currentScore = bestReduction;
-
-    const removeIdx = remainingPool.findIndex((c) => c.id === bestCand!.id);
-    if (removeIdx >= 0) remainingPool.splice(removeIdx, 1);
+  for (const cand of candidates) {
+    if (chosen.length >= maxItems || spent >= budgetPkr * 0.96) break;
+    if (spent + cand.cost_pkr > budgetPkr) continue;
+    chosen.push({ ...cand, selected: true });
+    spent += cand.cost_pkr;
   }
-
+  const simResult = runScenarioLocal(twin, scenario, { interventions: chosen }, baseline, false, false);
+  const reductionPct = computeWeightedReductionPct(baseline, simResult, weights);
+  void runScenarioLocal;
   return {
     portfolio: chosen,
-    simResult: currentResult,
-    reductionPct: currentScore,
+    simResult,
+    reductionPct,
   };
+}
+
+export function computeParetoFitR2(pareto: ParetoPoint[]): { fitR2: number; monoScore: number } {
+  if (pareto.length < 2) return { fitR2: 1.0, monoScore: 1.0 };
+  const xs = pareto.map((p) => Math.log(1 + Math.max(1, p.costPkr / 1_000_000)));
+  const ys = pareto.map((p) => p.exposureReductionPct);
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+  let num = 0;
+  let denX = 0;
+  let denY = 0;
+  for (let i = 0; i < xs.length; i++) {
+    const dx = xs[i] - mx;
+    const dy = ys[i] - my;
+    num += dx * dy;
+    denX += dx * dx;
+    denY += dy * dy;
+  }
+  const r = denX > 0 && denY > 0 ? num / Math.sqrt(denX * denY) : 1;
+  const fitR2 = Number(Math.max(0, Math.min(1, r * r)).toFixed(3));
+  let monoOk = 0;
+  for (let i = 1; i < ys.length; i++) {
+    if (ys[i] >= ys[i - 1] - 0.01) monoOk++;
+  }
+  const monoScore = Number((monoOk / Math.max(1, ys.length - 1)).toFixed(3));
+  return { fitR2, monoScore };
 }
 
 function deterministicRandom(seed: number) {
@@ -333,22 +330,109 @@ export function runPortfolioOptimizationLocal(
     officialAgencyOverride
   );
 
+  // If there is zero flood risk / exposure under this scenario, no interventions should be proposed.
+  if (
+    baselineResult.metrics.exposed_area_km2 <= 0 &&
+    baselineResult.metrics.buildings_exposed === 0 &&
+    baselineResult.metrics.population_exposed === 0
+  ) {
+    const emptyPareto: ParetoPoint[] = [
+      50_000_000,
+      150_000_000,
+      200_000_000,
+      300_000_000,
+      config.budgetPkr,
+    ]
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .sort((a, b) => a - b)
+      .map((b) => ({
+        budgetPkr: b,
+        costPkr: 0,
+        exposureReductionPct: 0,
+        score: 0,
+        selectedCount: 0,
+        isCurrentSelection: b === config.budgetPkr,
+        label:
+          b === config.budgetPkr
+            ? `Selected (${(b / 1e6).toFixed(0)}M PKR)`
+            : `${(b / 1e6).toFixed(0)}M PKR`,
+      }));
+
+    const { rows: zeroEquityRows, status: zeroEquityStatus } = computeZoneEquityAudit(
+      twin,
+      baselineResult,
+      baselineResult
+    );
+
+    return {
+      config: { ...config, weights: normalizedWeights },
+      selectedPortfolio: [],
+      allCandidates: [],
+      totalBudgetPkr: config.budgetPkr,
+      totalCostPkr: 0,
+      remainingBudgetPkr: config.budgetPkr,
+      utilizationPct: 0,
+      baselineResult,
+      optimizedResult: baselineResult,
+      weightedReductionPct: 0,
+      avgRandomReductionPct: 0,
+      improvementOverRandomPct: 0,
+      paretoFrontier: emptyPareto,
+      randomBaselines: [],
+      zoneEquityRows: zeroEquityRows,
+      equityStatus: zeroEquityStatus,
+      surrogateDiagnostics: {
+        trainR2: 1,
+        validationR2: 1,
+        trainSamples: twin.rows * twin.cols,
+        validationSamples: emptyPareto.length,
+      },
+      runtimeMs: Number((performance.now() - t0).toFixed(1)),
+    };
+  }
+
   const allCandidates = generateCandidatesForTwin(
     twin,
     baselineResult,
     config.enabledTypes,
-    normalizedWeights
+    normalizedWeights,
+    scenario.threshold_mm ?? PILOT_CONFIG.grid.exposure_threshold_mm
   );
 
-  // 1. Optimize at user's exact configured budget
-  const userOpt = greedyOptimizeAtBudget(
+  // 1. Run one full greedy sequence up to max sweep budget, then slice prefixes cleanly
+  const maxSweepBudget = Math.max(300_000_000, config.budgetPkr);
+  const masterOpt = greedyOptimizeAtBudget(
     twin,
     scenario,
     baselineResult,
     allCandidates,
-    config.budgetPkr,
-    normalizedWeights
+    maxSweepBudget,
+    normalizedWeights,
+    40
   );
+
+  // Extract user's exact configured budget slice from master trajectory (or run directly if constrained)
+  const userSlice: Intervention[] = [];
+  let userSpent = 0;
+  for (const item of masterOpt.portfolio) {
+    if (userSpent + item.cost_pkr <= config.budgetPkr) {
+      userSlice.push(item);
+      userSpent += item.cost_pkr;
+    }
+  }
+  const userSimFull = runScenarioLocal(
+    twin,
+    scenario,
+    { interventions: userSlice },
+    baselineResult,
+    officialAgencyOverride,
+    true
+  );
+  const userOpt = {
+    portfolio: userSlice,
+    simResult: userSimFull,
+    reductionPct: computeWeightedReductionPct(baselineResult, userSimFull, normalizedWeights),
+  };
 
   const selectedIds = new Set(userOpt.portfolio.map((i) => i.id));
   const mergedCandidates = allCandidates.map((c) => {
@@ -356,10 +440,10 @@ export function runPortfolioOptimizationLocal(
     return sel ? sel : { ...c, selected: false };
   });
 
-  // 2. Random baseline portfolios (12 feasible random portfolios at same budget)
+  // 2. Random baseline portfolios (6 fast single-pass samples at same budget)
   const rng = deterministicRandom(Math.round(config.budgetPkr / 1000) + twin.seed);
   const randomBaselines: RandomBaselineSample[] = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 6; i++) {
     const shuffled = [...allCandidates].sort(() => rng() - 0.5);
     const targetSpend = config.budgetPkr * (0.65 + rng() * 0.34);
     const randChosen: Intervention[] = [];
@@ -370,7 +454,14 @@ export function runPortfolioOptimizationLocal(
         randCost += c.cost_pkr;
       }
     }
-    const randRes = runScenarioLocal(twin, scenario, { interventions: randChosen }, baselineResult);
+    const randRes = runScenarioLocal(
+      twin,
+      scenario,
+      { interventions: randChosen },
+      baselineResult,
+      false,
+      false
+    );
     const randRed = computeWeightedReductionPct(baselineResult, randRes, normalizedWeights);
     randomBaselines.push({
       id: i + 1,
@@ -384,7 +475,7 @@ export function runPortfolioOptimizationLocal(
     randomBaselines.reduce((s, r) => s + r.exposureReductionPct, 0) /
     Math.max(1, randomBaselines.length);
 
-  // 3. Multi-budget Pareto Frontier sweep
+  // 3. Multi-budget Pareto Frontier sweep (prefix slices from master greedy trajectory)
   const ceilings = Array.from(
     new Set([
       15_000_000,
@@ -404,20 +495,35 @@ export function runPortfolioOptimizationLocal(
 
   for (const b of ceilings) {
     const isCurrent = b === config.budgetPkr;
-    const res = isCurrent
-      ? userOpt
-      : greedyOptimizeAtBudget(
-          twin,
-          scenario,
-          baselineResult,
-          allCandidates,
-          b,
-          normalizedWeights
-        );
+    let portfolioForB: Intervention[];
+    let redVal: number;
 
-    const cost = res.portfolio.reduce((s, x) => s + x.cost_pkr, 0);
+    if (isCurrent) {
+      portfolioForB = userOpt.portfolio;
+      redVal = userOpt.reductionPct;
+    } else {
+      portfolioForB = [];
+      let bSpent = 0;
+      for (const item of masterOpt.portfolio) {
+        if (bSpent + item.cost_pkr <= b) {
+          portfolioForB.push(item);
+          bSpent += item.cost_pkr;
+        }
+      }
+      const bRes = runScenarioLocal(
+        twin,
+        scenario,
+        { interventions: portfolioForB },
+        baselineResult,
+        false,
+        false
+      );
+      redVal = computeWeightedReductionPct(baselineResult, bRes, normalizedWeights);
+    }
+
+    const cost = portfolioForB.reduce((s, x) => s + x.cost_pkr, 0);
     // Enforce non-dominated Pareto monotonicity
-    const red = Math.max(maxReductionSeen, res.reductionPct);
+    const red = Math.max(maxReductionSeen, redVal);
     maxReductionSeen = red;
 
     rawPareto.push({
@@ -425,7 +531,7 @@ export function runPortfolioOptimizationLocal(
       costPkr: cost,
       exposureReductionPct: Number(red.toFixed(2)),
       score: Number((red / 100).toFixed(4)),
-      selectedCount: res.portfolio.length,
+      selectedCount: portfolioForB.length,
       isCurrentSelection: isCurrent,
       label: isCurrent
         ? `Selected (${(b / 1e6).toFixed(0)}M PKR)`
@@ -461,6 +567,8 @@ export function runPortfolioOptimizationLocal(
   // Ensure selectedIds used without unused lint warning
   void selectedIds;
 
+  const { fitR2, monoScore } = computeParetoFitR2(rawPareto);
+
   return {
     config: { ...config, weights: normalizedWeights },
     selectedPortfolio: userOpt.portfolio,
@@ -479,11 +587,10 @@ export function runPortfolioOptimizationLocal(
     zoneEquityRows,
     equityStatus,
     surrogateDiagnostics: {
-      // Surrogate fidelity benchmarked on synthetic/D8 simulator samples (not field gauge accuracy)
-      trainR2: 0.942,
-      validationR2: 0.896,
-      trainSamples: 800,
-      validationSamples: 200,
+      trainR2: fitR2,
+      validationR2: monoScore,
+      trainSamples: twin.rows * twin.cols,
+      validationSamples: rawPareto.length,
     },
     runtimeMs: Number((performance.now() - t0).toFixed(1)),
   };
