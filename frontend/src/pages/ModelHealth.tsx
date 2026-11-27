@@ -6,7 +6,7 @@ import {
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
-import { MunicipalPanel, PanelCard } from '../components/ui/Primitives';
+import { MunicipalPanel, PageHeader, PanelCard } from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
 import { cn } from '../utils/cn';
 
@@ -22,28 +22,23 @@ export function ModelHealth() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-bold text-[#173C79]">
-            System Intelligence &amp; Model Diagnostics
-          </h1>
-          <p className="text-xs sm:text-sm text-[#5A6A7E]">
-            Transparent telemetry on weather feeds, geospatial data layers, D8 hydrological routing, and surrogate fidelity vs. independent validation.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => refreshWeather()}
-          disabled={isSyncingWeather}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-sm bg-[#173C79] hover:bg-[#244D8F] text-xs font-semibold text-white self-start cursor-pointer"
-        >
-          <RefreshCw
-            className={cn('w-3.5 h-3.5', isSyncingWeather && 'animate-spin')}
-          />
-          Verify Live Telemetry
-        </button>
-      </div>
+      <PageHeader
+        title="System Intelligence & Model Diagnostics"
+        subtitle="Telemetry health across weather feeds, geospatial layers, and flood routing accuracy."
+        rightSlot={
+          <button
+            type="button"
+            onClick={() => refreshWeather()}
+            disabled={isSyncingWeather}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-sm bg-[#173C79] hover:bg-[#244D8F] text-xs font-semibold text-white cursor-pointer"
+          >
+            <RefreshCw
+              className={cn('w-3.5 h-3.5', isSyncingWeather && 'animate-spin')}
+            />
+            Verify Live Telemetry
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
         <PanelCard className="space-y-1.5 border-t-2 border-t-[#55A85F]">
@@ -81,7 +76,9 @@ export function ModelHealth() {
             <div>
               <span className="text-[10px] font-mono text-[#5A6A7E] block">Curve Fit</span>
               <span className="text-lg font-bold font-mono text-[#26364A]">
-                {(modelDiagnostics.surrogateTrainR2 * 100).toFixed(0)}%
+                {modelDiagnostics.validationSampleCount > 0
+                  ? `${(modelDiagnostics.surrogateTrainR2 * 100).toFixed(0)}%`
+                  : 'N/A'}
               </span>
             </div>
             <span className="text-[#CBD5E1]">/</span>
@@ -90,12 +87,16 @@ export function ModelHealth() {
                 Stability
               </span>
               <span className="text-lg font-bold font-mono text-[#55A85F]">
-                {(modelDiagnostics.surrogateValidationR2 * 100).toFixed(0)}%
+                {modelDiagnostics.validationSampleCount > 0
+                  ? `${(modelDiagnostics.surrogateValidationR2 * 100).toFixed(0)}%`
+                  : 'N/A'}
               </span>
             </div>
           </div>
           <div className="text-[11px] text-[#5A6A7E]">
-            Verified across {modelDiagnostics.validationSampleCount} budget checkpoints
+            {modelDiagnostics.validationSampleCount > 0
+              ? `Verified across ${modelDiagnostics.validationSampleCount} budget checkpoints`
+              : 'Run optimizer to compute Pareto curve fit'}
           </div>
         </PanelCard>
 
@@ -123,7 +124,7 @@ export function ModelHealth() {
               Planning Notice ({engineMode === 'api' && apiHealthy ? 'Server Active' : 'Local Screening'})
             </div>
             <p className="text-[#26364A] leading-relaxed">
-              Results are designed for municipal investment planning and emergency preparedness across Rawalpindi and Islamabad. They should be cross-checked against official PMD and NDMA river-gauge advisories before issuing evacuation directives.
+              {modelDiagnostics.validationStatus} Results are designed for municipal investment planning and preparedness across Rawalpindi and Islamabad and must be cross-checked with official PMD and NDMA river-gauge advisories before public directives.
             </p>
           </div>
         </div>

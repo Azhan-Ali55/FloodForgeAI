@@ -47,7 +47,7 @@ interface OpenMeteoEnsembleResponse {
   };
 }
 
-export function describeWmoWeatherCode(code: number | null): string {
+function describeWmoWeatherCode(code: number | null): string {
   if (code === null || !Number.isFinite(code)) return 'Data unavailable';
   if (code === 0) return 'Clear Sky';
   if (code <= 2) return 'Partly Cloudy';
@@ -61,14 +61,14 @@ export function describeWmoWeatherCode(code: number | null): string {
   return 'Cloudy';
 }
 
-export function classifyDailyRainRisk(rainfallMm: number): StationRiskLevel {
+function classifyDailyRainRisk(rainfallMm: number): StationRiskLevel {
   if (rainfallMm >= 65) return 'Critical';
   if (rainfallMm >= 35) return 'High';
   if (rainfallMm >= 15) return 'Moderate';
   return 'Low';
 }
 
-export function computeEarliestFloodAlert(
+function computeEarliestFloodAlert(
   outlook30d: OutlookDayPoint[]
 ): EarliestFloodAlert | null {
   // First look for High or Critical upcoming flood-triggering rainfall (>= 35 mm/day)
@@ -890,6 +890,8 @@ export function create2001CloudburstWeather(dayOffset = 7, hourOfDay = 9): Weath
   };
 }
 
+let inflightWeatherPromise: Promise<WeatherBundle> | null = null;
+
 export async function fetchNullahLaiWeather(forceRefresh = false): Promise<WeatherBundle> {
   if (!forceRefresh) {
     try {
@@ -904,78 +906,87 @@ export async function fetchNullahLaiWeather(forceRefresh = false): Promise<Weath
     } catch {
       // ignore storage errors
     }
+    if (inflightWeatherPromise) return inflightWeatherPromise;
   }
 
-  const forecastParams = new URLSearchParams({
-    latitude: String(PILOT_CONFIG.weather.lat),
-    longitude: String(PILOT_CONFIG.weather.lon),
-    hourly:
-      'precipitation,precipitation_probability,temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,soil_moisture_0_to_1cm,soil_moisture_1_to_3cm,soil_moisture_3_to_9cm',
-    daily:
-      'precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,weather_code',
-    past_days: String(PILOT_CONFIG.weather.past_days),
-    forecast_days: '16',
-    timezone: PILOT_CONFIG.weather.timezone,
-    timeformat: 'unixtime',
-    cell_selection: 'land',
-  });
+  const runFetch = async (): Promise<WeatherBundle> => {
+    const forecastParams = new URLSearchParams({
+      latitude: String(PILOT_CONFIG.weather.lat),
+      longitude: String(PILOT_CONFIG.weather.lon),
+      hourly:
+        'precipitation,precipitation_probability,temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,soil_moisture_0_to_1cm,soil_moisture_1_to_3cm,soil_moisture_3_to_9cm',
+      daily:
+        'precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,weather_code',
+      past_days: String(PILOT_CONFIG.weather.past_days),
+      forecast_days: '16',
+      timezone: PILOT_CONFIG.weather.timezone,
+      timeformat: 'unixtime',
+      cell_selection: 'land',
+    });
 
-  const ensembleParams = new URLSearchParams({
-    latitude: String(PILOT_CONFIG.weather.lat),
-    longitude: String(PILOT_CONFIG.weather.lon),
-    daily: 'precipitation_sum',
-    forecast_days: '35',
-    timezone: PILOT_CONFIG.weather.timezone,
-    timeformat: 'unixtime',
-  });
+    const ensembleParams = new URLSearchParams({
+      latitude: String(PILOT_CONFIG.weather.lat),
+      longitude: String(PILOT_CONFIG.weather.lon),
+      models: 'gfs_seamless',
+      daily: 'precipitation_sum',
+      forecast_days: '35',
+      timezone: PILOT_CONFIG.weather.timezone,
+      timeformat: 'unixtime',
+    });
 
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
-
-    const [forecastRes, ensembleRes] = await Promise.all([
-      fetch(`${OPEN_METEO_BASE}?${forecastParams.toString()}`, { signal: controller.signal }),
-      fetch(`${OPEN_METEO_ENSEMBLE_URL}?${ensembleParams.toString()}`, {
-        signal: controller.signal,
-      }).catch(() => null),
-    ]);
-
-    clearTimeout(timer);
-    if (!forecastRes.ok) throw new Error(`Open-Meteo HTTP ${forecastRes.status}`);
-
-    const raw = (await forecastRes.json()) as OpenMeteoRawResponse;
-    let ensembleJson: OpenMeteoEnsembleResponse | null = null;
-    if (ensembleRes && ensembleRes.ok) {
-      ensembleJson = (await ensembleRes.json().catch(() => null)) as OpenMeteoEnsembleResponse | null;
-    }
-
-    const bundle = parseOpenMeteoResponse(raw, ensembleJson);
     try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify(bundle));
-    } catch {
-      // ignore storage quota
-    }
-    return bundle;
-  } catch {
-    try {
-      const rawCache = localStorage.getItem(CACHE_KEY);
-      if (rawCache) {
-        const cached = JSON.parse(rawCache) as WeatherBundle;
-        const ageHours = Number(
-          ((Date.now() - new Date(cached.fetchedAtIso).getTime()) / 3600_000).toFixed(1)
-        );
-        return {
-          ...cached,
-          source: 'LOCAL_CACHE_FALLBACK',
-          isStale: true,
-          cacheAgeHours: ageHours,
-        };
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7000);
+
+      const [forecastRes, ensembleRes] = await Promise.all([
+        fetch(`${OPEN_METEO_BASE}?${forecastParams.toString()}`, { signal: controller.signal }),
+        fetch(`${OPEN_METEO_ENSEMBLE_URL}?${ensembleParams.toString()}`, {
+          signal: controller.signal,
+        }).catch(() => null),
+      ]);
+
+      clearTimeout(timer);
+      if (!forecastRes.ok) throw new Error(`Open-Meteo HTTP ${forecastRes.status}`);
+
+      const raw = (await forecastRes.json()) as OpenMeteoRawResponse;
+      let ensembleJson: OpenMeteoEnsembleResponse | null = null;
+      if (ensembleRes && ensembleRes.ok) {
+        ensembleJson = (await ensembleRes.json().catch(() => null)) as OpenMeteoEnsembleResponse | null;
       }
+
+      const bundle = parseOpenMeteoResponse(raw, ensembleJson);
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(bundle));
+      } catch {
+        // ignore storage quota
+      }
+      return bundle;
     } catch {
-      // ignore
+      try {
+        const rawCache = localStorage.getItem(CACHE_KEY);
+        if (rawCache) {
+          const cached = JSON.parse(rawCache) as WeatherBundle;
+          const ageHours = Number(
+            ((Date.now() - new Date(cached.fetchedAtIso).getTime()) / 3600_000).toFixed(1)
+          );
+          return {
+            ...cached,
+            source: 'LOCAL_CACHE_FALLBACK',
+            isStale: true,
+            cacheAgeHours: ageHours,
+          };
+        }
+      } catch {
+        // ignore
+      }
+      return createDeterministicFallbackWeather(false);
+    } finally {
+      inflightWeatherPromise = null;
     }
-    return createDeterministicFallbackWeather(false);
-  }
+  };
+
+  inflightWeatherPromise = runFetch();
+  return inflightWeatherPromise;
 }
 
 export function clearWeatherCache(): void {

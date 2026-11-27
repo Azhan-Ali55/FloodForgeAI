@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ArrowDownRight,
   Building2,
-  CheckCircle2,
   Route,
   Scale,
   ShieldAlert,
@@ -20,7 +19,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { MunicipalPanel, PanelCard } from '../components/ui/Primitives';
+import {
+  EquityStatusBanner,
+  MunicipalPanel,
+  PageHeader,
+  PanelCard,
+} from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
 import { cn } from '../utils/cn';
 import { formatNumber } from '../utils/formatters';
@@ -81,62 +85,38 @@ export function EquityImpact() {
     );
   }
 
-  const isEquityPass =
-    optResult.equityStatus !== 'RISK_TRANSFER_CONCERN' &&
-    !(optResult.optimizedResult.risk_transfer?.flagged);
-
-  const equityBanner = isEquityPass
-    ? {
-        title: '✅ Equity Pass: No downstream risk transfer.',
-        desc: 'All Rawalpindi & Islamabad basin wards pass downstream equity limits (<=2% downstream building risk tolerance).',
-        icon: CheckCircle2,
-        cls: 'bg-[#EDF7EE] border-[#55A85F] text-[#2F6F37]',
-      }
-    : {
-        title: 'Risk-Transfer Concern Detected',
-        desc: 'Downstream Rawalpindi exposed buildings increased above the 2% equity threshold after intervention placement. Review drainage discharge routing before approval.',
-        icon: AlertTriangle,
-        cls: 'bg-[#FBEBEB] border-[#D94343] text-[#A12323]',
-      };
-
-  const BannerIcon = equityBanner.icon;
+  const hasFloodRisk =
+    optResult.baselineResult.metrics.exposed_area_km2 > 0 ||
+    optResult.baselineResult.metrics.buildings_exposed > 0;
+  const equityFlagged =
+    optResult.equityStatus === 'RISK_TRANSFER_CONCERN' ||
+    Boolean(optResult.optimizedResult.risk_transfer?.flagged);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-bold text-[#173C79]">
-            Neighborhood Equity &amp; Impact Assessment
-          </h1>
-          <p className="text-xs sm:text-sm text-[#5A6A7E]">
-            Before-and-after exposure comparison and ward-level downstream risk-transfer audit across Islamabad &amp; Rawalpindi.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-xs font-mono text-[#173C79]">
-          <Scale className="w-4 h-4" />
-          <span>{optResult.zoneEquityRows.length} Basin Zones Audited</span>
-        </div>
-      </div>
-
-      <div
-        className={cn(
-          'rounded border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3',
-          equityBanner.cls
-        )}
-      >
-        <div className="flex items-start gap-3">
-          <BannerIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          <div>
-            <div className="font-heading text-sm font-bold">{equityBanner.title}</div>
-            <p className="text-xs text-[#26364A] mt-0.5 leading-relaxed">
-              {equityBanner.desc}
-            </p>
+      <PageHeader
+        title="Neighborhood Equity & Impact Assessment"
+        subtitle="Before-and-after exposure comparison and downstream risk-transfer audit across Islamabad & Rawalpindi."
+        rightSlot={
+          <div className="flex items-center gap-2 text-xs font-mono text-[#173C79]">
+            <Scale className="w-4 h-4" />
+            <span>{optResult.zoneEquityRows.length} Basin Zones Audited</span>
           </div>
-        </div>
-        <span className="text-[10px] font-mono uppercase px-2.5 py-1 rounded-sm bg-white border border-current/30 self-start sm:self-center flex-shrink-0">
-          {optResult.equityStatus.replace(/_/g, ' ')}
-        </span>
-      </div>
+        }
+      />
+
+      <EquityStatusBanner
+        hasFloodRisk={hasFloodRisk}
+        equityFlagged={equityFlagged}
+        description={
+          !hasFloodRisk
+            ? 'No exposed corridors require downstream transfer auditing under dry conditions.'
+            : equityFlagged
+              ? 'Downstream Rawalpindi exposed buildings exceeded the 2% tolerance threshold.'
+              : 'All Rawalpindi & Islamabad basin wards pass the 2% downstream building risk tolerance limit.'
+        }
+        rightSlot={optResult.equityStatus.replace(/_/g, ' ')}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {metricsComparison.map((m) => {
@@ -232,14 +212,14 @@ export function EquityImpact() {
           className="xl:col-span-4"
           bodyClassName="p-4 flex flex-col justify-between gap-4"
         >
-          <div className="space-y-2.5 text-xs text-[#26364A] leading-relaxed">
-            <p>
-              A reduction in total basin flooded area does <strong>not</strong> automatically verify social equity. Drainage upgrades in upstream Islamabad sectors can accelerate peak discharge into low-income downstream Rawalpindi wards (such as Dhoke Hassu, Ratta Amral, and Gawalmandi).
-            </p>
-            <p className="text-[#5A6A7E]">
-              FloodForgeAI audits every zone independently and flags portfolios that transfer flood risk beyond a 2% downstream building tolerance threshold.
-            </p>
-          </div>
+          <ul className="space-y-2 text-xs text-[#26364A] leading-relaxed list-disc pl-4">
+            <li>
+              Prevents upstream Islamabad drainage upgrades from shifting flood peaks into downstream Rawalpindi wards.
+            </li>
+            <li className="text-[#5A6A7E]">
+              Each zone is audited independently against a strict 2% downstream building exposure tolerance.
+            </li>
+          </ul>
 
           <div className="p-3 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] space-y-1.5 text-xs">
             <div className="font-semibold text-[10px] uppercase tracking-wider text-[#5A6A7E]">

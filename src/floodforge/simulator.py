@@ -130,7 +130,9 @@ class D8Simulator:
     ) -> np.ndarray:
         rows, cols = twin.shape
         cell_area_m2 = twin.cell_area_m2
-        total_rain_mm = scenario.total_rainfall_mm
+        total_rain_mm = scenario.total_rainfall_mm * scenario.uncertainty_factor
+        if total_rain_mm <= 0.0:
+            return np.zeros((rows, cols), dtype=np.float64)
         order, downstream, route_frac = self._get_routing(twin)
 
         perm_cov = np.zeros((rows, cols), dtype=np.float64)
@@ -166,8 +168,15 @@ class D8Simulator:
             self.cfg.raw["interventions"]["permeable_surface"].get("runoff_reduction", 0.40)
         )
         base_runoff = self._base_runoff_grid(twin)
+        wetness_scale = {
+            "dry": 0.88,
+            "normal": 1.0,
+            "wet": 1.12,
+            "saturated": 1.25,
+        }.get(scenario.antecedent_wetness or "", 1.0)
+        pervious_adj = 1.0 + (wetness_scale - 1.0) * (1.0 - base_runoff)
         eff_runoff = np.clip(
-            base_runoff * runoff_multiplier * (1.0 - perm_reduction * np.clip(perm_cov, 0.0, 1.0)),
+            base_runoff * pervious_adj * runoff_multiplier * (1.0 - perm_reduction * np.clip(perm_cov, 0.0, 1.0)),
             0.0,
             1.0,
         )
@@ -317,8 +326,11 @@ class D8Simulator:
         twin: TwinGrid,
         scenario: Scenario,
         threshold_mm: float | None = None,
+        enabled_types: set[InterventionType] | None = None,
     ) -> Portfolio:
         threshold = float(threshold_mm) if threshold_mm is not None else self.cfg.exposure_threshold_mm
+        if not math.isfinite(threshold) or threshold <= 0:
+            raise ValueError(f"threshold_mm must be finite and > 0, got {threshold}")
         base_res = self.run_scenario(
             twin, scenario, Portfolio(), threshold_mm=threshold, include_uncertainty=False
         )
@@ -328,8 +340,13 @@ class D8Simulator:
 
         exposed = acc >= threshold
         if not np.any(exposed):
-            exposed = acc >= threshold * 0.85
-        if not np.any(exposed):
+            return Portfolio()
+
+        allowed = enabled_types if enabled_types is not None else {
+            InterventionType.STORAGE,
+            InterventionType.PERMEABLE_SURFACE,
+        }
+        if not allowed:
             return Portfolio()
 
         hosp = twin.facilities.get("hospital", np.zeros(twin.shape, dtype=bool))
@@ -355,26 +372,34 @@ class D8Simulator:
         budget = scenario.budget_pkr
         stor_cfg = self.cfg.raw["interventions"]["storage"]
         perm_cfg = self.cfg.raw["interventions"]["permeable_surface"]
+        drain_cfg = self.cfg.raw["interventions"]["drainage"]
         storage_cost = float(stor_cfg["cost_per_m3_pkr"])
         storage_size = float(stor_cfg.get("default_size", 18000))
         perm_cost = float(perm_cfg["cost_per_m2_pkr"])
         perm_size = float(perm_cfg.get("default_size", 18000))
+        drain_cost = float(drain_cfg["cost_per_m3hr_pkr"])
+        drain_size = float(drain_cfg.get("default_size", 12000))
+
+        type_options: list[tuple[InterventionType, float, float]] = []
+        if InterventionType.STORAGE in allowed:
+            type_options.append((InterventionType.STORAGE, storage_size, storage_size * storage_cost))
+            type_options.append((InterventionType.STORAGE, storage_size * 0.5, (storage_size * 0.5) * storage_cost))
+        if InterventionType.PERMEABLE_SURFACE in allowed:
+            type_options.append((InterventionType.PERMEABLE_SURFACE, perm_size, perm_size * perm_cost))
+            type_options.append((InterventionType.PERMEABLE_SURFACE, perm_size * 0.5, (perm_size * 0.5) * perm_cost))
+        if InterventionType.DRAINAGE in allowed:
+            type_options.append((InterventionType.DRAINAGE, drain_size, drain_size * drain_cost))
+            type_options.append((InterventionType.DRAINAGE, drain_size * 0.5, (drain_size * 0.5) * drain_cost))
 
         for _ in range(160):
             if spent >= budget * 0.96 or len(chosen) >= 40:
                 break
 
             remaining = budget - spent
-            if remaining >= storage_size * storage_cost:
-                itype, size, cost = InterventionType.STORAGE, storage_size, storage_size * storage_cost
-            elif remaining >= perm_size * perm_cost:
-                itype, size, cost = InterventionType.PERMEABLE_SURFACE, perm_size, perm_size * perm_cost
-            elif remaining >= (storage_size * 0.5) * storage_cost:
-                itype, size, cost = InterventionType.STORAGE, storage_size * 0.5, (storage_size * 0.5) * storage_cost
-            elif remaining >= (perm_size * 0.5) * perm_cost:
-                itype, size, cost = InterventionType.PERMEABLE_SURFACE, perm_size * 0.5, (perm_size * 0.5) * perm_cost
-            else:
+            picked = next(((t, s, c_pkr) for (t, s, c_pkr) in type_options if remaining >= c_pkr), None)
+            if picked is None:
                 break
+            itype, size, cost = picked
 
             cov_score = np.where(blocked, -1.0, _box_sum(uncovered, rad))
             if float(cov_score.max()) <= 0.0:
@@ -389,18 +414,22 @@ class D8Simulator:
                 size=size,
                 cost_pkr=cost,
             )
-            test_portfolio = Portfolio(interventions=[*chosen, candidate])
-            test_res = self.run_scenario(
-                twin,
-                scenario,
-                test_portfolio,
-                baseline_acc=acc,
-                threshold_mm=threshold,
-                include_uncertainty=False,
-            )
-            if test_res.risk_transfer and test_res.risk_transfer.flagged:
-                blocked[r, c] = True
-                continue
+            # Storage & permeable surfaces reduce runoff monotonically; only drainage surcharge can divert water downstream
+            if candidate.type == InterventionType.DRAINAGE or any(
+                c_item.type == InterventionType.DRAINAGE for c_item in chosen
+            ):
+                test_portfolio = Portfolio(interventions=[*chosen, candidate])
+                test_res = self.run_scenario(
+                    twin,
+                    scenario,
+                    test_portfolio,
+                    baseline_acc=acc,
+                    threshold_mm=threshold,
+                    include_uncertainty=False,
+                )
+                if test_res.risk_transfer and test_res.risk_transfer.flagged:
+                    blocked[r, c] = True
+                    continue
 
             chosen.append(candidate)
             spent += cost

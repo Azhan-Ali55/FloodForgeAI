@@ -1,9 +1,7 @@
 import { useState } from 'react';
-import { Activity, Download, Printer, Scale, Sliders } from 'lucide-react';
-import { useFloodForge } from '../context/FloodForgeContext';
-import { formatSoilMoistureStatus } from '../services/forecastService';
+import { Activity, Scale, Sliders } from 'lucide-react';
+import { ReportActionButtons } from '../components/ui/ReportActionButtons';
 import { cn } from '../utils/cn';
-import { downloadMitigationReportCsv } from '../utils/reportExport';
 import { EquityImpact } from './EquityImpact';
 import { MitigationOptimizer } from './MitigationOptimizer';
 import { ModelHealth } from './ModelHealth';
@@ -12,19 +10,6 @@ type ReportTab = 'optimizer' | 'equity' | 'diagnostics';
 
 export function Reports() {
   const [tab, setTab] = useState<ReportTab>('optimizer');
-  const {
-    operationalMode,
-    weather,
-    backendForecast,
-    activeThresholdMm,
-    optResult,
-    pushToast,
-  } = useFloodForge();
-
-  const soilMoisture = formatSoilMoistureStatus(
-    weather,
-    operationalMode === 'demo_2001' ? null : backendForecast
-  );
 
   return (
     <div className="space-y-4">
@@ -58,43 +43,7 @@ export function Reports() {
           })}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {optResult && (
-            <button
-              type="button"
-              onClick={() => {
-                downloadMitigationReportCsv({
-                  modeLabel:
-                    operationalMode === 'demo_2001'
-                      ? '2001 Cloudburst Weather Replay'
-                      : 'Live Operations Forecast',
-                  timestampPkt: weather.fetchedAtPkt,
-                  thresholdMm: activeThresholdMm,
-                  soilMoistureLabel: soilMoisture.combinedLabel,
-                  optResult,
-                  weather,
-                });
-                pushToast(
-                  'Report Downloaded',
-                  'Exported full budget, population, buildings & zone equity report (CSV).',
-                  'success'
-                );
-              }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm bg-[#EEF3FA] hover:bg-[#173C79] hover:text-white border border-[#173C79]/35 text-[#173C79] text-xs font-semibold cursor-pointer transition-colors"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Download Report (CSV)
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm bg-[#F5F6F7] hover:bg-[#EEF3FA] border border-[#D6DCE4] text-[#26364A] text-xs font-semibold cursor-pointer transition-colors"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            Print Brief
-          </button>
-        </div>
+        <ReportActionButtons />
       </div>
 
       {tab === 'optimizer' && <MitigationOptimizer />}

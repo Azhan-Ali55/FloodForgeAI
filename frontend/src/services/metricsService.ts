@@ -121,13 +121,13 @@ export function buildModelDiagnostics(
     d8FlowRoutingStatus: 'CONVERGED',
     flowAccumulationStatus: 'ACTIVE_30M_SCREENING',
     lastSimExecutionMs: simResult.runtime_ms,
-    surrogateTrainR2: optResult?.surrogateDiagnostics.trainR2 ?? 0.942,
-    surrogateValidationR2: optResult?.surrogateDiagnostics.validationR2 ?? 0.896,
-    trainSampleCount: optResult?.surrogateDiagnostics.trainSamples ?? 800,
-    validationSampleCount: optResult?.surrogateDiagnostics.validationSamples ?? 200,
+    surrogateTrainR2: optResult?.surrogateDiagnostics.trainR2 ?? 0,
+    surrogateValidationR2: optResult?.surrogateDiagnostics.validationR2 ?? 0,
+    trainSampleCount: optResult?.surrogateDiagnostics.trainSamples ?? 0,
+    validationSampleCount: optResult?.surrogateDiagnostics.validationSamples ?? 0,
     validationStatus: isRealCalibrated
-      ? 'D8 routing calibrated on 30 m Copernicus GLO-30 DEM twin; surrogate trained to simulator — PMD field gauge validation pending.'
-      : 'Surrogate fidelity benchmarked against D8 simulator only — field gauge validation pending PMD telemetry.',
+      ? 'Deterministic 30 m Copernicus GLO-30 D8 routing + greedy Pareto optimizer active; no trained ML flood-depth predictor loaded — PMD field gauge validation pending.'
+      : 'Deterministic 30 m D8 screening + greedy optimizer active; no trained ML predictor loaded — field gauge validation pending PMD telemetry.',
     mlMaturityTier: isRealCalibrated ? 'TIER_2_CALIBRATED' : 'TIER_1_SYNTHETIC',
     gridShape: `${twin.rows} × ${twin.cols} (${twin.cell_size_m} m)`,
     crs: twin.crs,

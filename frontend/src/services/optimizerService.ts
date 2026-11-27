@@ -19,6 +19,7 @@ import { apiRequest, type EngineMode } from './apiClient';
 import {
   executeSimulation,
   fromBackendInterventionType,
+  toBackendInterventionType,
 } from './simulationService';
 
 interface BackendOptimizeResponse {
@@ -30,6 +31,37 @@ interface BackendOptimizeResponse {
     size: number;
     cost_pkr: number;
   }>;
+  pareto_frontier?: Array<{
+    budget_pkr: number;
+    cost_pkr: number;
+    exposure_reduction_pct: number;
+    selected_count: number;
+  }>;
+}
+
+function validateOptimizeResponse(
+  data: BackendOptimizeResponse,
+  rows: number,
+  cols: number
+): void {
+  if (!data || !Array.isArray(data.interventions)) {
+    throw new Error('Malformed /api/optimize response: missing interventions array');
+  }
+  for (const iv of data.interventions) {
+    if (
+      typeof iv.id !== 'string' ||
+      !Number.isInteger(iv.row) ||
+      !Number.isInteger(iv.col) ||
+      iv.row < 0 ||
+      iv.row >= rows ||
+      iv.col < 0 ||
+      iv.col >= cols ||
+      typeof iv.cost_pkr !== 'number' ||
+      !Number.isFinite(iv.cost_pkr)
+    ) {
+      throw new Error(`Invalid intervention coordinate or cost from /api/optimize (${iv?.id})`);
+    }
+  }
 }
 
 export async function executeOptimization(
@@ -41,8 +73,6 @@ export async function executeOptimization(
   officialAgencyOverride = false,
   signal?: AbortSignal
 ): Promise<{ result: OptimizationResult; usedFallback: boolean; error?: string }> {
-  const hasCustomTypeFilter =
-    config.enabledTypes.length < 3 || !config.enabledTypes.includes('retention_pond');
   const isDefaultWeights =
     config.weights.population === 30 &&
     config.weights.buildings === 30 &&
@@ -73,8 +103,8 @@ export async function executeOptimization(
     }
   }
 
-  // Python /api/optimize enforces default storage+permeable placement; honor custom /reports filters locally
-  if (mode === 'local' || hasCustomTypeFilter || !isDefaultWeights) {
+  // Fallback to local engine if API is unconfigured, offline mode is chosen, or custom weighted objectives are active
+  if (mode === 'local' || !apiUrl.trim() || !isDefaultWeights) {
     return {
       result: runPortfolioOptimizationLocal(twin, scenario, config, officialAgencyOverride),
       usedFallback: false,
@@ -95,12 +125,18 @@ export async function executeOptimization(
             rainfall_mm_per_hr: scenario.rainfall_mm_per_hr,
             duration_hr: scenario.duration_hr,
             budget_pkr: config.budgetPkr,
+            antecedent_wetness: scenario.antecedent_wetness ?? null,
+            uncertainty_factor: scenario.uncertainty_factor ?? 1.0,
           },
           threshold_mm: thresholdMm,
+          enabled_types: config.enabledTypes.map(toBackendInterventionType),
+          include_pareto: true,
         }),
       },
       25000
     );
+
+    validateOptimizeResponse(optPayload, twin.rows, twin.cols);
 
     const mappedInterventions: Intervention[] = optPayload.interventions.map((raw) => {
       const fType = fromBackendInterventionType(raw.type);
@@ -127,7 +163,7 @@ export async function executeOptimization(
         size: raw.size,
         unit: meta.unit,
         cost_pkr: raw.cost_pkr,
-        expected_impact_pct: Number((100 / Math.max(10, optPayload.interventions.length)).toFixed(2)),
+        expected_impact_pct: 0,
         selected: true,
       };
     });
@@ -161,10 +197,10 @@ export async function executeOptimization(
       baseSim.result,
       optSim.result
     );
-    const equityStatus = optSim.result.risk_transfer?.flagged
-      ? 'RISK_TRANSFER_CONCERN'
-      : derivedEquityStatus === 'RISK_TRANSFER_CONCERN'
-        ? 'NO_RISK_TRANSFER'
+    // Preserve risk-transfer warnings whenever EITHER engine detects a downstream increase
+    const equityStatus =
+      optSim.result.risk_transfer?.flagged || derivedEquityStatus === 'RISK_TRANSFER_CONCERN'
+        ? 'RISK_TRANSFER_CONCERN'
         : derivedEquityStatus;
 
     const totalCostPkr = mappedInterventions.reduce((s, x) => s + x.cost_pkr, 0);
@@ -175,7 +211,7 @@ export async function executeOptimization(
           100
         : 0;
 
-    // Weight per-site expected impact share by local accumulation & buildings instead of flat 100/N
+    // Apportion expected impact share proportionally to nearby baseline accumulation & exposed buildings
     const siteWeights = mappedInterventions.map((iv) => {
       let accSum = 0;
       let bldSum = 0;
@@ -196,31 +232,54 @@ export async function executeOptimization(
     const weightedSites: Intervention[] = mappedInterventions.map((iv, idx) => ({
       ...iv,
       expected_impact_pct: Number(
-        Math.max(0.25, (siteWeights[idx] / weightSum) * Math.max(10, areaRedPct)).toFixed(2)
+        Math.max(0.1, (siteWeights[idx] / weightSum) * Math.max(0, areaRedPct)).toFixed(2)
       ),
     }));
 
-    // Pareto curve benchmark checkpoints derived from calibrated D8 sweep + active point
-    const paretoCheckpoints: ParetoPoint[] = [
-      { budgetPkr: 50_000_000, costPkr: 49_860_000, exposureReductionPct: 9.6, score: 0.096, selectedCount: 9, label: '50M PKR' },
-      { budgetPkr: 150_000_000, costPkr: 144_000_000, exposureReductionPct: 29.0, score: 0.29, selectedCount: 25, label: '150M PKR' },
-      { budgetPkr: 200_000_000, costPkr: 195_840_000, exposureReductionPct: 39.1, score: 0.391, selectedCount: 34, label: '200M PKR', isKneePoint: true },
-      { budgetPkr: 300_000_000, costPkr: 230_400_000, exposureReductionPct: 45.4, score: 0.454, selectedCount: 40, label: '300M PKR' },
-    ];
-    const paretoFrontier = paretoCheckpoints
-      .filter((p) => p.budgetPkr !== config.budgetPkr)
-      .concat({
-        budgetPkr: config.budgetPkr,
-        costPkr: totalCostPkr,
-        exposureReductionPct: Number(Math.max(0, areaRedPct).toFixed(1)),
-        score: Number((Math.max(0, areaRedPct) / 100).toFixed(4)),
-        selectedCount: mappedInterventions.length,
-        isCurrentSelection: true,
-        label: `Selected (${(config.budgetPkr / 1e6).toFixed(0)}M PKR)`,
-      })
+    // Build genuine scenario-specific Pareto curve from backend simulated budget sweep
+    const rawParetoInput = optPayload.pareto_frontier?.length
+      ? optPayload.pareto_frontier
+      : [
+          {
+            budget_pkr: config.budgetPkr,
+            cost_pkr: totalCostPkr,
+            exposure_reduction_pct: Number(Math.max(0, areaRedPct).toFixed(1)),
+            selected_count: mappedInterventions.length,
+          },
+        ];
+
+    const paretoFrontier: ParetoPoint[] = rawParetoInput
+      .map((p) => ({
+        budgetPkr: p.budget_pkr,
+        costPkr: p.cost_pkr,
+        exposureReductionPct: p.exposure_reduction_pct,
+        score: Number((p.exposure_reduction_pct / 100).toFixed(4)),
+        selectedCount: p.selected_count,
+        isCurrentSelection: p.budget_pkr === config.budgetPkr,
+        label:
+          p.budget_pkr === config.budgetPkr
+            ? `Selected (${(p.budget_pkr / 1e6).toFixed(0)}M PKR)`
+            : `${(p.budget_pkr / 1e6).toFixed(0)}M PKR`,
+      }))
       .sort((a, b) => a.budgetPkr - b.budgetPkr);
 
-    const avgRandom = Number((Math.max(2, areaRedPct * 0.38)).toFixed(2));
+    let bestKneeIdx = 0;
+    let bestSlope = -1;
+    for (let i = 1; i < paretoFrontier.length; i++) {
+      const prev = paretoFrontier[i - 1];
+      const cur = paretoFrontier[i];
+      const dCostM = Math.max(1, (cur.costPkr - prev.costPkr) / 1e6);
+      const slope = (cur.exposureReductionPct - prev.exposureReductionPct) / dCostM;
+      if (slope > bestSlope) {
+        bestSlope = slope;
+        bestKneeIdx = i;
+      }
+    }
+    if (paretoFrontier[bestKneeIdx] && paretoFrontier[bestKneeIdx].exposureReductionPct > 0) {
+      paretoFrontier[bestKneeIdx].isKneePoint = true;
+    }
+
+    const avgRandom = Number((Math.max(0, areaRedPct * 0.38)).toFixed(2));
 
     return {
       result: {
@@ -237,11 +296,7 @@ export async function executeOptimization(
         avgRandomReductionPct: avgRandom,
         improvementOverRandomPct: Number(Math.max(0, weightedReductionPct - avgRandom).toFixed(2)),
         paretoFrontier,
-        randomBaselines: [
-          { id: 1, costPkr: totalCostPkr * 0.85, exposureReductionPct: Number((avgRandom * 0.85).toFixed(1)), score: 0.1 },
-          { id: 2, costPkr: totalCostPkr * 0.92, exposureReductionPct: Number((avgRandom * 1.05).toFixed(1)), score: 0.12 },
-          { id: 3, costPkr: totalCostPkr * 0.96, exposureReductionPct: Number((avgRandom * 1.1).toFixed(1)), score: 0.14 },
-        ],
+        randomBaselines: [],
         zoneEquityRows,
         equityStatus,
         surrogateDiagnostics: (() => {
@@ -258,7 +313,7 @@ export async function executeOptimization(
       usedFallback: false,
     };
   } catch (err) {
-    if (signal?.aborted) {
+    if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
       throw err;
     }
     return {

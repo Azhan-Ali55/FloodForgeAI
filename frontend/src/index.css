@@ -39,10 +39,6 @@
   }
 }
 
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-
 /* Municipal clean scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
@@ -144,4 +140,18 @@ input[type='range'] {
   font-size: 11px !important;
   font-weight: 600 !important;
   padding: 2px 6px !important;
+}
+
+@media print {
+  header,
+  .leaflet-control-container,
+  button {
+    box-shadow: none !important;
+  }
+  header {
+    position: static !important;
+  }
+  body {
+    background: #FFFFFF !important;
+  }
 }

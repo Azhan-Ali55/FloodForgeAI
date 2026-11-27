@@ -84,7 +84,7 @@ export const PILOT_CONFIG = {
     },
   },
   comparison_label: 'Moderate rainfall: 12% area reduction. Severe cloudburst: 39% area reduction.',
-  equity_pass_banner: '✅ Equity Pass: No downstream risk transfer.',
+  equity_pass_banner: 'Equity Pass: No downstream risk transfer.',
   runoff_coefficients: {
     10: 0.15, // Tree cover
     20: 0.25, // Shrubland

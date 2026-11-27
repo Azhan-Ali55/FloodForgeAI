@@ -7,7 +7,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import { MunicipalPanel } from '../components/ui/Primitives';
+import { MunicipalPanel, PageHeader } from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
 import { cn } from '../utils/cn';
 
@@ -37,14 +37,10 @@ export function Settings() {
 
   return (
     <div className="space-y-4 max-w-4xl">
-      <div>
-        <h1 className="font-heading text-xl font-bold text-[#173C79]">
-          Platform &amp; Backend Integration Settings
-        </h1>
-        <p className="text-xs sm:text-sm text-[#5A6A7E]">
-          Configure portal connectivity, emergency authorization gates, and local weather cache.
-        </p>
-      </div>
+      <PageHeader
+        title="Platform & Analytics Server Settings"
+        subtitle="Configure server connection, emergency authorization gates, and local weather cache."
+      />
 
       {/* Simulation Compute Mode */}
       <MunicipalPanel
@@ -123,15 +119,17 @@ export function Settings() {
         </div>
 
         <div className="space-y-1.5 pt-2">
-          <label className="text-xs font-semibold text-[#26364A]">
+          <label htmlFor="server-connection-address" className="text-xs font-semibold text-[#26364A]">
             Server Connection Address
           </label>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
+              id="server-connection-address"
+              aria-label="Server Connection Address"
               type="text"
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
-              placeholder="http://localhost:8000"
+              placeholder="https://your-floodforge-api.example.com"
               className="flex-1 px-3 py-2 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] font-mono text-xs text-[#26364A]"
             />
             <button

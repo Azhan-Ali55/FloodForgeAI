@@ -13,7 +13,7 @@ import type {
  * Classifies a station's flood risk using the municipal 4-color scale
  * from modeled 30 m D8 accumulation (mm).
  */
-export function classifyStationRisk(accumulationMm: number): StationRiskLevel {
+function classifyStationRisk(accumulationMm: number): StationRiskLevel {
   if (accumulationMm >= 85) return 'Critical';
   if (accumulationMm >= 50) return 'High';
   if (accumulationMm >= 25) return 'Moderate';

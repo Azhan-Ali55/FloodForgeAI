@@ -1,81 +1,79 @@
-# FloodForgeAI — $0 Deployment, QA & Operations Guide
+# FloodForgeAI — $0 Deployment, Provisioning & Operations Guide
 
 ## 1. Architecture & Runtime Overview
 
 - **Frontend (`frontend/`)**: React 19 + TypeScript + Vite 6 + Tailwind CSS v4 + Leaflet + Recharts.
-  - Runs completely client-side by default (`VITE_DEFAULT_ENGINE_MODE=local`), including the 30 m EPSG:32643 D8 screening engine, Pareto mitigation optimizer, zone equity audit, and live Open-Meteo API weather fetching.
-  - **Zero paid backend, database, or auth server required** for the core portal.
-  - Optional Python REST backend (`VITE_API_BASE_URL`) can be connected via **Settings** (`/settings`) if an external FastAPI server is hosted separately.
+  - Supports **Connected Mode** (`Python FastAPI / D8Simulator` when `VITE_API_BASE_URL` points to a hosted backend) and **In-Browser Screening Mode** (client-side 30 m D8 parity engine + bundled `public/real_twin_200x200.json` digital twin).
+  - Non-local production builds **never** silently fall back to `http://localhost:8000` if `VITE_API_BASE_URL` is unset; they operate explicitly in local screening mode until a remote backend URL is configured.
+- **Backend (`src/floodforge/`)**: FastAPI + Uvicorn + Pydantic v2 + NumPy D8 simulator.
+  - Exposes `/api/live` (liveness), `/api/ready` (raster readiness), `/api/health`, `/api/twin`, `/api/forecast`, `/api/simulate`, and `/api/optimize`.
 
 ---
 
-## 2. $0 Hosting Comparison & Eligibility
+## 2. Dataset Provisioning (Backend)
 
-### Option A — Vercel Hobby Plan ($0/month, Recommended for Hackathon / Non-Commercial / Prototype)
-- **Eligibility Notice:** Vercel Hobby is **strictly non-commercial** (personal, academic, hackathon, or non-monetized prototypes). If FloodForgeAI is deployed for commercial revenue or paid municipal contracting, use **Cloudflare Pages Free** instead (or upgrade to Vercel Pro).
-- **Quotas & Behavior When Exceeded:**
-  - Fast Data Transfer (Bandwidth): **100 GB / month**
-  - Fast Origin Transfer: **10 GB / month**
-  - CDN Requests: **1,000,000 / month**
-  - Serverless Function Invocations: **1,000,000 / month** (unused in static SPA mode)
-  - Deployments: **100 / day**, max **45 min** build time, 1 concurrent build
-  - **Limit behavior:** Projects exceeding monthly Hobby quotas are **automatically paused** until the next 30-day cycle resets (no surprise overage charges).
-- **Included Config:** `frontend/vercel.json` configures SPA rewrites (`/(.*) -> /index.html`) so direct URL visits and page refreshes on `/monitoring`, `/map`, `/prediction`, `/reports`, `/settings` work without 404s, and sets `X-Content-Type-Options`, `X-Frame-Options`, and `Referrer-Policy` headers.
+Large `.npy` rasters under `data/processed/clipped/` are gitignored by default to keep Git history lightweight. On any clean clone or container build, provision them from the tracked canonical `frontend/public/real_twin_200x200.json` archive before starting the Python API:
 
-### Option B — Cloudflare Pages Free ($0/month, Alternative for Public/Commercial Static Hosting)
-- **Quotas:**
-  - Bandwidth & Static Requests: **Unlimited** on the Free plan
-  - Builds: **500 builds / month**, max **20 min** build time, 1 concurrent build
-  - Max file size: **25 MiB** per asset (current bundle chunks are all < 500 kB)
-  - Dynamic Pages Functions (if added later): **100,000 requests / day**
-- **SPA Routing:** Add a `frontend/public/_redirects` rule `/* /index.html 200` if deploying on Cloudflare Pages instead of Vercel.
+```bash
+python scripts/provision_twin_from_json.py
+```
 
-### External API Dependencies ($0)
-- **Open-Meteo Weather API (`https://api.open-meteo.com/v1/forecast`)**: Free non-commercial public API; automatically cached in browser `localStorage` (`30 min` TTL) and falls back cleanly to `SYNTHETIC_DEMO` when unreachable or rate-limited.
-- **OpenStreetMap / Esri World Imagery Tiles**: Public client-side map tiles; the map falls back cleanly to FloodForgeAI's light-green vector & land-cover base (`#DCEAD5`) if tiles are blocked or offline.
+Required output files:
+
+- `dem_filled.npy` (`200x200`, finite floats in metres)
+- `f_imp.npy` (`200x200`, normalized `[0, 1]`)
+- `buildings.npy`, `population.npy`, `roads.npy`, `zones_adm3.npy`
+- Optional `facilities_hospital.npy`, `facilities_school.npy`, `metadata.json`
+
+Override default repo paths via environment variables:
+- `FLOODFORGE_CONFIG_PATH` (default: `configs/pilot.yaml`)
+- `FLOODFORGE_DATA_DIR` (default: `data/processed/clipped`)
+
+If rasters are missing or contain `NaN`/`Inf`, `/api/ready` and `/api/health` intentionally fail with HTTP `503` (`error_category: dataset_unavailable`) rather than serving fabricated zero data.
 
 ---
 
 ## 3. Environment Variables
 
-Copy `frontend/.env.example` to `frontend/.env` locally (never commit `.env`):
+### Frontend (`frontend/.env.example`)
+Public build-time variables only (never store private keys in `VITE_*`):
+- `VITE_API_BASE_URL` — Public HTTPS URL of your deployed FastAPI backend (leave blank for standalone in-browser demo mode on Vercel)
+- `VITE_DEFAULT_ENGINE_MODE` — `local` or `api`
+- `VITE_OPEN_METEO_URL` — Optional Open-Meteo endpoint override
 
-```ini
-VITE_API_BASE_URL=http://localhost:8000
-VITE_DEFAULT_ENGINE_MODE=local
-VITE_OPEN_METEO_URL=https://api.open-meteo.com/v1/forecast
-```
+### Backend (Server-Only Environment)
+- `FLOODFORGE_CORS_ORIGINS` — Comma-separated allowed origins (e.g. `https://your-app.vercel.app`)
+- `FLOODFORGE_CORS_ORIGIN_REGEX` — Optional preview origin regex (e.g. `https://floodforge.*\.vercel\.app`)
+- `FLOODFORGE_CONFIG_PATH` — Custom YAML config path
+- `FLOODFORGE_DATA_DIR` — Custom clipped raster directory path
+- `FLOODFORGE_LOG_LEVEL` — `INFO` / `WARNING` / `DEBUG`
 
 ---
 
-## 4. Reproducible QA, Build & Deploy Commands
+## 4. $0 Hosting Comparison & Eligibility
 
-### Local Verification & E2E Tests
+### Frontend: Vercel Hobby ($0/month, non-commercial/academic) or Cloudflare Pages Free
+- **Vercel Settings:** Root Directory = `frontend`, Framework = `Vite`, Build Command = `npm run build`, Output Directory = `dist`.
+- `frontend/vercel.json` handles SPA client routing rewrites (`/(.*) -> /index.html`) and security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`).
+- **Important Note:** If deploying the frontend on Vercel *without* hosting the Python backend, the portal runs transparently as an in-browser screening deployment (`Local Simulation Engine Active`), not a server-backed deployment.
+
+### Backend Hosting Requirements
+- Python `>=3.10`, ~256–512 MB RAM recommended (`numpy` + `200x200` D8 routing + `optimize` multi-budget sweep ~3.9s worst-case).
+- Suitable free/low-cost Python ASGI platforms: Render Free Web Service, Railway, or Docker on Fly.io / VM with `uvicorn floodforge.api:app --app-dir src --host 0.0.0.0 --port $PORT`. Note that Render/free tiers sleep on idle (cold start delay).
+
+---
+
+## 5. Verification Commands
+
 ```bash
+# Backend regression tests (unit + ASGI contracts)
+pytest -v
+
+# Frontend typecheck, security audit, build & Playwright E2E
 cd frontend
 npm ci
 npm run typecheck
+npm audit --omit=dev
 npm run build
 npm run test:e2e
 ```
-
-### Deploy Preview & Production to Vercel ($0 Hobby)
-1. Authenticate once with your Vercel account:
-   ```bash
-   cd frontend
-   npx vercel login
-   ```
-2. Deploy a preview URL and test end-to-end:
-   ```bash
-   npx vercel
-   ```
-3. Promote to production on a free `*.vercel.app` subdomain:
-   ```bash
-   npx vercel --prod
-   ```
-   *(Or connect the GitHub repository in the Vercel dashboard with **Root Directory** = `frontend`, **Framework Preset** = `Vite`, **Build Command** = `npm run build`, **Output Directory** = `dist`.)*
-
-### Update, Redeploy & Rollback
-- **Update & Redeploy:** Commit changes to Git (`git push`) for automatic Vercel Git deployments, or run `cd frontend && npm run build && npx vercel --prod`.
-- **Rollback (Vercel):** In Vercel Dashboard → Project → Deployments → select previous healthy deployment → **Promote to Production** (or `npx vercel rollback`).
-- **Rollback (Git):** `git revert <commit-sha>` and push/redeploy.

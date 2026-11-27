@@ -8,7 +8,11 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { GeospatialMap } from '../components/maps/GeospatialMap';
-import { AlertTierBadge, MunicipalPanel } from '../components/ui/Primitives';
+import {
+  AlertTierBadge,
+  MunicipalPanel,
+  PageHeader,
+} from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
 import type {
   BasemapStyle,
@@ -73,39 +77,35 @@ export function IntelligenceMap() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-bold text-[#173C79]">
-            Flood Risk &amp; Geospatial Monitoring Map
-          </h1>
-          <p className="text-xs sm:text-sm text-[#5A6A7E]">
-            Multi-layer 30 m GIS explorer across Nullah Lai topography, monitoring stations, waterways, and mitigation candidate sites.
-          </p>
-        </div>
-        <div className="flex items-center gap-1 rounded-sm bg-white border border-[#D6DCE4] p-1 self-start">
-          {(
-            [
-              ['mitigated', 'Post-Mitigation'],
-              ['baseline', 'Unmitigated Baseline'],
-              ['delta', 'Risk Delta'],
-            ] as const
-          ).map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setViewMode(mode)}
-              className={cn(
-                'px-2.5 py-1 rounded-sm text-xs font-semibold transition-colors cursor-pointer',
-                viewMode === mode
-                  ? 'bg-[#173C79] text-white'
-                  : 'text-[#5A6A7E] hover:text-[#173C79]'
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Flood Risk & Geospatial Monitoring Map"
+        subtitle="Interactive 30 m GIS layers across Nullah Lai topography, monitoring nodes, and mitigation sites."
+        rightSlot={
+          <div className="flex items-center gap-1 rounded-sm bg-white border border-[#D6DCE4] p-1">
+            {(
+              [
+                ['mitigated', 'Post-Mitigation'],
+                ['baseline', 'Unmitigated Baseline'],
+                ['delta', 'Risk Delta'],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setViewMode(mode)}
+                className={cn(
+                  'px-2.5 py-1 rounded-sm text-xs font-semibold transition-colors cursor-pointer',
+                  viewMode === mode
+                    ? 'bg-[#173C79] text-white'
+                    : 'text-[#5A6A7E] hover:text-[#173C79]'
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         {/* Layer Control Sidebar */}

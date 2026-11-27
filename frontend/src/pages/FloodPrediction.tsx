@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Building2,
@@ -8,13 +7,10 @@ import {
   CloudLightning,
   Download,
   Droplets,
-  History,
   Loader2,
-  Map as MapIcon,
   Play,
   Route,
   ShieldAlert,
-  ShieldCheck,
   Users,
   Waves,
 } from 'lucide-react';
@@ -23,33 +19,30 @@ import {
   BarChart,
   CartesianGrid,
   ComposedChart,
-  Legend,
   Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
+import { HistoricalHindcastPanel } from '../components/prediction/HistoricalHindcastPanel';
 import {
   AlertTierBadge,
   MunicipalPanel,
+  PageHeader,
   ScenarioTagBadge,
 } from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
 import { buildPreparednessActions } from '../engine/monitoringStations';
-import { PILOT_CONFIG } from '../engine/pilotConfig';
 import { buildScenarioForOutlookDay } from '../services/forecastService';
-import { executeOptimization } from '../services/optimizerService';
-import { downloadSimulationReportCsv } from '../utils/reportExport';
 import type {
   AntecedentWetnessLevel,
   ForecastHorizon,
-  OptimizationResult,
-  Scenario,
   ScenarioTag,
 } from '../types/floodforge';
 import { cn } from '../utils/cn';
-import { formatNumber, formatPKR } from '../utils/formatters';
+import { formatNumber } from '../utils/formatters';
+import { downloadSimulationReportCsv } from '../utils/reportExport';
 
 const STORM_PRESETS: Array<{
   name: string;
@@ -85,54 +78,7 @@ const STORM_PRESETS: Array<{
   },
 ];
 
-interface HistoricalEventSpec {
-  id: '2001_cloudburst' | '2026_monsoon' | '2021_monsoon';
-  title: string;
-  dateLabel: string;
-  summary: string;
-  rainfallMmHr: number;
-  durationHr: number;
-  wetness: AntecedentWetnessLevel;
-}
-
-const HISTORICAL_EVENTS: HistoricalEventSpec[] = [
-  {
-    id: '2001_cloudburst',
-    title: 'July 23, 2001 Islamabad–Rawalpindi Cloudburst',
-    dateLabel: '620 mm over 10 hr · Saturated Basin',
-    summary:
-      'Historic extreme cloudburst along Nullah Lai (62 mm/hr × 10 hr). Replays unmitigated inundation vs. counterfactual loss prevented by retention ponds, permeable zones, and drainage upgrades.',
-    rainfallMmHr: 62,
-    durationHr: 10,
-    wetness: 'saturated',
-  },
-  {
-    id: '2026_monsoon',
-    title: 'Sept 2026 Nullah Lai Monsoon Event',
-    dateLabel: '201 mm over 24 hr · Wet Basin',
-    summary:
-      'Sustained 24-hour monsoon benchmark (~8.4 mm/hr × 24 hr) calibrated in metadata.json to evaluate prolonged urban drainage accumulation and downstream Rawalpindi equity.',
-    rainfallMmHr: 8.4,
-    durationHr: 24,
-    wetness: 'wet',
-  },
-  {
-    id: '2021_monsoon',
-    title: 'July 28, 2021 Nullah Lai Monsoon Surge',
-    dateLabel: '330 mm over 6 hr · Wet Basin',
-    summary:
-      'Major urban flash-flooding surge impacting Katarian, Gawalmandi, and Sector E-11/I-10 tributaries. Evaluates preventative loss reduction under municipal budget limits.',
-    rainfallMmHr: 55,
-    durationHr: 6,
-    wetness: 'wet',
-  },
-];
-
-const HINDCAST_BUDGETS = [50_000_000, 150_000_000, 200_000_000, 300_000_000];
-const hindcastCache = new Map<string, OptimizationResult>();
-
 export function FloodPrediction() {
-  const navigate = useNavigate();
   const {
     weather,
     forecastHorizon,
@@ -146,101 +92,9 @@ export function FloodPrediction() {
     simActiveResult,
     isSimulating,
     runCloudburstSimulation,
-    optConfig,
-    setOptConfig,
-    runOptimization,
-    engineMode,
-    apiUrl,
   } = useFloodForge();
 
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [hindcastEventId, setHindcastEventId] =
-    useState<HistoricalEventSpec['id']>('2001_cloudburst');
-  const [hindcastBudget, setHindcastBudget] = useState<number>(200_000_000);
-  const [hindcastResult, setHindcastResult] = useState<OptimizationResult | null>(null);
-  const [isRunningHindcast, setIsRunningHindcast] = useState(false);
-
-  const activeHistoricalEvent = useMemo(
-    () => HISTORICAL_EVENTS.find((e) => e.id === hindcastEventId) ?? HISTORICAL_EVENTS[0],
-    [hindcastEventId]
-  );
-
-  useEffect(() => {
-    const thresholdMm = activeHistoricalEvent.id === '2001_cloudburst' ? 150 : 50;
-    const cacheKey = `${twin.studyAreaId}:${twin.rows}:${engineMode}:${hindcastEventId}:${hindcastBudget}:${thresholdMm}`;
-    const cached = hindcastCache.get(cacheKey);
-    if (cached) {
-      setHindcastResult(cached);
-      setIsRunningHindcast(false);
-      return;
-    }
-    let active = true;
-    const abortCtrl = new AbortController();
-    setIsRunningHindcast(true);
-    const timer = setTimeout(() => {
-      const scenario: Scenario = {
-        rainfall_mm_per_hr: activeHistoricalEvent.rainfallMmHr,
-        duration_hr: activeHistoricalEvent.durationHr,
-        budget_pkr: hindcastBudget,
-        threshold_mm: thresholdMm,
-        antecedent_wetness: activeHistoricalEvent.wetness,
-        uncertainty_factor: 1.0,
-        tag: 'HYPOTHETICAL_STRESS_TEST',
-        label: activeHistoricalEvent.title,
-      };
-      executeOptimization(
-        engineMode,
-        apiUrl,
-        twin,
-        scenario,
-        {
-          ...optConfig,
-          budgetPkr: hindcastBudget,
-          enabledTypes: ['retention_pond', 'permeable_surface', 'drainage_upgrade'],
-        },
-        false,
-        abortCtrl.signal
-      )
-        .then(({ result }) => {
-          if (!active) return;
-          hindcastCache.set(cacheKey, result);
-          setHindcastResult(result);
-          setIsRunningHindcast(false);
-        })
-        .catch(() => {
-          if (active) setIsRunningHindcast(false);
-        });
-    }, 60);
-    return () => {
-      active = false;
-      abortCtrl.abort();
-      clearTimeout(timer);
-    };
-  }, [twin, hindcastEventId, hindcastBudget, activeHistoricalEvent, optConfig, engineMode, apiUrl]);
-
-  const handleLoadHindcastToMap = async () => {
-    const thresholdMm = activeHistoricalEvent.id === '2001_cloudburst' ? 150 : 50;
-    const scenario: Scenario = {
-      rainfall_mm_per_hr: activeHistoricalEvent.rainfallMmHr,
-      duration_hr: activeHistoricalEvent.durationHr,
-      budget_pkr: hindcastBudget,
-      threshold_mm: thresholdMm,
-      antecedent_wetness: activeHistoricalEvent.wetness,
-      uncertainty_factor: 1.0,
-      tag: 'HYPOTHETICAL_STRESS_TEST',
-      label: activeHistoricalEvent.title,
-    };
-    const nextCfg = {
-      ...optConfig,
-      budgetPkr: hindcastBudget,
-      enabledTypes: ['retention_pond', 'permeable_surface', 'drainage_upgrade'] as typeof optConfig.enabledTypes,
-    };
-    setSimScenario(scenario);
-    setOptConfig(nextCfg);
-    await runCloudburstSimulation(scenario);
-    await runOptimization(nextCfg);
-    navigate('/map');
-  };
 
   const visibleForecast = useMemo(
     () =>
@@ -354,20 +208,16 @@ export function FloodPrediction() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-bold text-[#173C79]">
-            Operational Flood Prediction &amp; Cloudburst Simulator
-          </h1>
-          <p className="text-xs sm:text-sm text-[#5A6A7E]">
-            Combine meteorological forecasts with pervious-only antecedent soil wetness and deterministic D8 cloudburst stress testing.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <ScenarioTagBadge tag={simActiveResult.scenario_tag} />
-          <AlertTierBadge tier={simActiveResult.alert_tier} size="md" />
-        </div>
-      </div>
+      <PageHeader
+        title="Operational Flood Prediction & Cloudburst Simulator"
+        subtitle="Combine meteorological forecasts, soil moisture, and D8 cloudburst stress testing."
+        rightSlot={
+          <>
+            <ScenarioTagBadge tag={simActiveResult.scenario_tag} />
+            <AlertTierBadge tier={simActiveResult.alert_tier} size="md" />
+          </>
+        }
+      />
 
       {/* Weather Forecast Section */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
@@ -793,7 +643,7 @@ export function FloodPrediction() {
             )}
 
             <div className="p-2 rounded-sm bg-[#EEF3FA] border border-[#173C79]/25 text-[11px] text-[#173C79] leading-snug">
-              <strong>Downhill Flow Modeling:</strong> Modeled using 30 m D8 topological flow routing across the 200×200 DEM (runoff flows downhill cell-by-cell).
+              30 m D8 runoff routing across the 200×200 DEM grid.
             </div>
 
             <button
@@ -969,266 +819,20 @@ export function FloodPrediction() {
             <AlertTriangle className="w-4 h-4 text-[#EF8735] flex-shrink-0 mt-0.5" />
             <div className="leading-relaxed">
               <strong className="text-[#8A6700]">
-                Uncertainty &amp; Epistemic Limitations:
+                Uncertainty &amp; Limitations:
               </strong>{' '}
-              Sensitivity bounds (±14% runoff coefficient) estimate affected area between{' '}
+              Sensitivity bounds (±12% runoff coefficient) estimate affected area between{' '}
               <span className="font-mono font-semibold">
                 {simActiveResult.uncertainty.exposed_area_km2?.[0].toFixed(2)}–
                 {simActiveResult.uncertainty.exposed_area_km2?.[1].toFixed(2)} km²
               </span>
-              . Outputs are 30 m D8 screening-level proxies and do not replace PMD/NDMA hydrometric bulletins.
+              . 30 m D8 screening outputs only — verify against PMD/NDMA bulletins.
             </div>
           </div>
         </MunicipalPanel>
       </div>
 
-      {/* Historical Hindcast & Prevention Impact Section */}
-      <MunicipalPanel
-        title="Past Flood Hindcast & Prevention Impact (Model Validation Counterfactual)"
-        icon={<History className="w-4 h-4" />}
-        rightSlot={
-          <span className="text-[10px] font-mono text-white/90">
-            30 m D8 + AI Optimizer Replay
-          </span>
-        }
-        bodyClassName="p-4 space-y-4"
-      >
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-[#E6EAEF]">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              {HISTORICAL_EVENTS.map((ev) => (
-                <button
-                  key={ev.id}
-                  type="button"
-                  onClick={() => setHindcastEventId(ev.id)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-sm border text-xs font-semibold transition-colors cursor-pointer',
-                    hindcastEventId === ev.id
-                      ? 'bg-[#173C79] text-white border-[#173C79]'
-                      : 'bg-[#F5F6F7] text-[#26364A] border-[#D6DCE4] hover:border-[#173C79]'
-                  )}
-                >
-                  {ev.title}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-[#5A6A7E]">{activeHistoricalEvent.summary}</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-            <span className="text-[11px] font-semibold text-[#5A6A7E]">
-              Prevention Budget:
-            </span>
-            <div className="flex items-center rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] p-0.5">
-              {HINDCAST_BUDGETS.map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  onClick={() => setHindcastBudget(b)}
-                  className={cn(
-                    'px-2 py-1 rounded-sm text-[11px] font-mono font-semibold cursor-pointer transition-colors',
-                    hindcastBudget === b
-                      ? 'bg-[#173C79] text-white'
-                      : 'text-[#5A6A7E] hover:text-[#173C79]'
-                  )}
-                >
-                  {b / 1_000_000}M
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={handleLoadHindcastToMap}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-[#55A85F] hover:bg-[#469350] text-white text-xs font-semibold cursor-pointer transition-colors"
-            >
-              <MapIcon className="w-3.5 h-3.5" />
-              Inspect Delta on Map
-            </button>
-          </div>
-        </div>
-
-        {isRunningHindcast || !hindcastResult ? (
-          <div className="py-10 flex items-center justify-center gap-2 text-xs font-mono text-[#173C79]">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Running historical D8 replay &amp; prevention portfolio optimization...
-          </div>
-        ) : (
-          (() => {
-            const base = hindcastResult.baselineResult.metrics;
-            const opt = hindcastResult.optimizedResult.metrics;
-            const savedBuildings = Math.max(0, base.buildings_exposed - opt.buildings_exposed);
-            const savedPop = Math.max(0, base.population_exposed - opt.population_exposed);
-            const savedArea = Math.max(0, base.exposed_area_km2 - opt.exposed_area_km2);
-            const savedFac = Math.max(
-              0,
-              base.total_facilities_exposed - opt.total_facilities_exposed
-            );
-            const pctBldg =
-              base.buildings_exposed > 0
-                ? ((savedBuildings / base.buildings_exposed) * 100).toFixed(1)
-                : '0.0';
-            const pctPop =
-              base.population_exposed > 0
-                ? ((savedPop / base.population_exposed) * 100).toFixed(1)
-                : '0.0';
-            const pctArea =
-              base.exposed_area_km2 > 0
-                ? ((savedArea / base.exposed_area_km2) * 100).toFixed(1)
-                : '0.0';
-
-            const chartData = [
-              {
-                metric: 'Flooded Area (×100 ha)',
-                withoutPrevention: Number((base.exposed_area_km2 * 1).toFixed(2)),
-                withPrevention: Number((opt.exposed_area_km2 * 1).toFixed(2)),
-              },
-              {
-                metric: 'Buildings (×1000)',
-                withoutPrevention: Number((base.buildings_exposed / 1000).toFixed(2)),
-                withPrevention: Number((opt.buildings_exposed / 1000).toFixed(2)),
-              },
-              {
-                metric: 'Population (×10k)',
-                withoutPrevention: Number((base.population_exposed / 10_000).toFixed(2)),
-                withPrevention: Number((opt.population_exposed / 10_000).toFixed(2)),
-              },
-            ];
-
-            return (
-              <div className="space-y-4">
-                {/* Summary Impact Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div className="p-3 rounded-sm bg-[#EDF7EE] border border-[#55A85F]/60">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-[#2F6F37]">
-                      <span>Buildings Protected</span>
-                      <Building2 className="w-4 h-4" />
-                    </div>
-                    <div className="text-xl font-bold font-mono text-[#173C79] mt-1">
-                      {formatNumber(savedBuildings)} saved
-                    </div>
-                    <div className="text-[11px] text-[#2F6F37] font-mono mt-0.5">
-                      -{pctBldg}% ({formatNumber(base.buildings_exposed)} →{' '}
-                      {formatNumber(opt.buildings_exposed)})
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-sm bg-[#EDF7EE] border border-[#55A85F]/60">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-[#2F6F37]">
-                      <span>Residents Protected</span>
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <div className="text-xl font-bold font-mono text-[#173C79] mt-1">
-                      {formatNumber(savedPop)} people
-                    </div>
-                    <div className="text-[11px] text-[#2F6F37] font-mono mt-0.5">
-                      -{pctPop}% ({formatNumber(base.population_exposed)} →{' '}
-                      {formatNumber(opt.population_exposed)})
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-sm bg-[#EEF3FA] border border-[#244D8F]/40">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-[#173C79]">
-                      <span>Flooded Area Reduced</span>
-                      <Waves className="w-4 h-4" />
-                    </div>
-                    <div className="text-xl font-bold font-mono text-[#173C79] mt-1">
-                      -{savedArea.toFixed(2)} km²
-                    </div>
-                    <div className="text-[11px] text-[#5A6A7E] font-mono mt-0.5">
-                      -{pctArea}% ({base.exposed_area_km2.toFixed(2)} →{' '}
-                      {opt.exposed_area_km2.toFixed(2)} km²)
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4]">
-                    <div className="flex items-center justify-between text-[11px] font-semibold text-[#173C79]">
-                      <span>Downstream Equity Audit</span>
-                      <ShieldCheck className="w-4 h-4 text-[#55A85F]" />
-                    </div>
-                    <div className="text-sm font-bold font-mono text-[#2F6F37] mt-1.5 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-[#55A85F]" />
-                      {hindcastResult.equityStatus.replace(/_/g, ' ')}
-                    </div>
-                    <div className="text-[11px] text-[#5A6A7E] font-mono mt-1">
-                      {hindcastResult.selectedPortfolio.length} sites ({formatPKR(hindcastResult.totalCostPkr)}) · {savedFac} facilities shielded
-                    </div>
-                  </div>
-                </div>
-
-                {/* Comparison Chart + Selected Prevention Measures */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                  <div className="lg:col-span-6 p-3 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
-                    <div className="text-xs font-bold text-[#173C79] mb-2">
-                      Without Prevention vs. With AI-Optimized Prevention ({activeHistoricalEvent.dateLabel})
-                    </div>
-                    <div className="h-52">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#D6DCE4" vertical={false} />
-                          <XAxis dataKey="metric" tick={{ fill: '#26364A', fontSize: 10 }} />
-                          <YAxis tick={{ fill: '#5A6A7E', fontSize: 10 }} />
-                          <Tooltip contentStyle={{ fontSize: 11, borderColor: '#CBD5E1' }} />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                          <Bar
-                            dataKey="withoutPrevention"
-                            name="Without Prevention"
-                            fill="#D94343"
-                            radius={[2, 2, 0, 0]}
-                          />
-                          <Bar
-                            dataKey="withPrevention"
-                            name="With AI Prevention"
-                            fill="#55A85F"
-                            radius={[2, 2, 0, 0]}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  <div className="lg:col-span-6 p-3 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-[#173C79]">
-                        Where Prevention Measures Were Sited ({hindcastResult.selectedPortfolio.length} Sites)
-                      </span>
-                      <span className="text-[10px] font-mono text-[#55A85F] font-semibold">
-                        Lift vs. Random: +{hindcastResult.improvementOverRandomPct}%
-                      </span>
-                    </div>
-                    <div className="max-h-44 overflow-y-auto divide-y divide-[#E2E6EC] bg-white rounded-sm border border-[#D6DCE4] px-2.5">
-                      {hindcastResult.selectedPortfolio.map((iv) => (
-                        <div
-                          key={iv.id}
-                          className="py-1.5 flex items-center justify-between gap-2 text-[11px]"
-                        >
-                          <div className="min-w-0">
-                            <span className="font-mono font-bold text-[#173C79] mr-1.5">
-                              {iv.id}
-                            </span>
-                            <span className="font-semibold text-[#26364A]">
-                              {PILOT_CONFIG.interventions[iv.type].label}
-                            </span>
-                            <span className="text-[#5A6A7E] ml-1.5">· {iv.zoneName}</span>
-                          </div>
-                          <div className="font-mono text-right flex-shrink-0">
-                            <span className="text-[#55A85F] font-semibold mr-2">
-                              -{iv.expected_impact_pct.toFixed(1)}%
-                            </span>
-                            <span className="text-[#5A6A7E]">{formatPKR(iv.cost_pkr)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-[10px] text-[#5A6A7E] leading-snug">
-                      <strong>Methodological note:</strong> Counterfactual hindcast computed on the 30 m D8 screening twin using historical storm depth ({activeHistoricalEvent.dateLabel}). Demonstrates spatial loss reduction and downstream equity compliance; not a substitute for surveyed 2001 WASA/PMD claim ledgers.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-          })()
-        )}
-      </MunicipalPanel>
+      <HistoricalHindcastPanel />
     </div>
   );
 }

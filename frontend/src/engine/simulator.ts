@@ -1,6 +1,5 @@
 import type {
   AlertTier,
-  AntecedentWetnessLevel,
   AreaSafetySummary,
   ExposureMetrics,
   HotspotItem,
@@ -86,19 +85,6 @@ function getFlowRouting(twin: TwinGrid): RoutingCache {
   return built;
 }
 
-export function getWetnessAdjustment(wetness: AntecedentWetnessLevel = 'normal'): number {
-  switch (wetness) {
-    case 'dry':
-      return 0.78;
-    case 'normal':
-      return 1.0;
-    case 'wet':
-      return 1.24;
-    case 'saturated':
-      return 1.48;
-  }
-}
-
 export function classifyFloodRiskTier(
   exposedAreaKm2: number,
   officialAgencyOverride = false
@@ -123,7 +109,10 @@ function computeAccumulationArray(
   const cellAreaM2 = cell_size_m * cell_size_m;
   const uncertaintyFactor = scenario.uncertainty_factor ?? 1.0;
   const totalRainMm =
-    scenario.rainfall_mm_per_hr * scenario.duration_hr * uncertaintyFactor;
+    Math.max(0, scenario.rainfall_mm_per_hr) * scenario.duration_hr * uncertaintyFactor;
+  if (totalRainMm <= 0) {
+    return new Float64Array(n);
+  }
   const routing = getFlowRouting(twin);
 
   const permCoverage = new Float64Array(n);
@@ -181,15 +170,24 @@ function computeAccumulationArray(
     }
   }
 
-  // Direct f_imp runoff coefficient matching locked backend (no wetnessAdj check when dry/wet, keep sensitivity)
+  // Pervious-only antecedent wetness modulation aligned with Python D8Simulator
+  const wetnessScale =
+    scenario.antecedent_wetness === 'dry'
+      ? 0.88
+      : scenario.antecedent_wetness === 'wet'
+        ? 1.12
+        : scenario.antecedent_wetness === 'saturated'
+          ? 1.25
+          : 1.0;
   const inflow = new Float64Array(n);
   const accumulation = new Float64Array(n);
   const pondingFactor = 0.9 / (1.0 + Math.max(0, scenario.duration_hr - 4.0) * 0.08);
 
   for (let i = 0; i < n; i++) {
     const cRaw = Math.min(1.0, Math.max(0.05, f_imp[i]));
+    const perviousAdj = 1.0 + (wetnessScale - 1.0) * (1.0 - cRaw);
     const cov = Math.min(1, permCoverage[i]);
-    const cEff = Math.min(1.0, cRaw * sensitivityMultiplier * (1 - 0.4 * cov));
+    const cEff = Math.min(1.0, cRaw * perviousAdj * sensitivityMultiplier * (1 - 0.4 * cov));
     inflow[i] = totalRainMm * cEff * pondingFactor;
   }
 
@@ -234,7 +232,7 @@ function computeAccumulationArray(
   return accumulation;
 }
 
-export function computeExposureMetrics(
+function computeExposureMetrics(
   twin: TwinGrid,
   accumulation: Float64Array,
   thresholdMm: number = PILOT_CONFIG.grid.exposure_threshold_mm
@@ -341,9 +339,9 @@ export function runScenarioLocal(
 
   let uncertainty: Record<string, [number, number]> = {};
   if (includeUncertainty) {
-    // Screening uncertainty sensitivity bounds (±14%)
-    const lowAcc = computeAccumulationArray(twin, scenario, portfolio, 0.86);
-    const highAcc = computeAccumulationArray(twin, scenario, portfolio, 1.14);
+    // Screening uncertainty sensitivity bounds (±12% aligned with Python D8Simulator)
+    const lowAcc = computeAccumulationArray(twin, scenario, portfolio, 0.88);
+    const highAcc = computeAccumulationArray(twin, scenario, portfolio, 1.12);
     const lowMetrics = computeExposureMetrics(twin, lowAcc, threshold).metrics;
     const highMetrics = computeExposureMetrics(twin, highAcc, threshold).metrics;
 

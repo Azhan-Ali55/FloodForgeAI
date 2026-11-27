@@ -17,13 +17,16 @@ def test_synthetic_twin_is_aligned():
 def test_scenario_and_portfolio():
     s = Scenario(rainfall_mm_per_hr=50, duration_hr=2, budget_pkr=50_000_000)
     assert s.total_rainfall_mm == 100
+    dry = Scenario(rainfall_mm_per_hr=0, duration_hr=1, budget_pkr=50_000_000)
+    assert dry.total_rainfall_mm == 0
     p = Portfolio([Intervention("a", InterventionType.STORAGE, 10, 10, 500, 7_500_000)])
     assert p.within_budget(s.budget_pkr) and not p.within_budget(1_000_000)
-    try:
-        Scenario(0, 2, 1)
-        raise AssertionError("expected ValueError")
-    except ValueError:
-        pass
+    for bad in ((-1, 2, 1), (10, 0, 1), (10, 2, -5), (float("nan"), 2, 1)):
+        try:
+            Scenario(*bad)
+            raise AssertionError(f"expected ValueError for {bad}")
+        except ValueError:
+            pass
 
 
 if __name__ == "__main__":  # run without pytest: python tests/test_foundation.py

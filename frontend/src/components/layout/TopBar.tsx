@@ -27,7 +27,7 @@ const TOP_NAV_ITEMS = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
-export function FloodForgeMunicipalLogo() {
+function FloodForgeMunicipalLogo() {
   return (
     <NavLink to="/" className="flex items-center gap-2.5 min-w-0 flex-shrink-0">
       <div className="w-8 h-8 rounded bg-[#173C79] flex items-center justify-center shadow-xs">

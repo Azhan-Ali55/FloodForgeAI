@@ -352,6 +352,12 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
   }, [addEvent]);
 
   const syncBackendTelemetry = useCallback(async () => {
+    if (!apiUrl.trim()) {
+      setApiHealthy(false);
+      setApiLatencyMs(null);
+      setBackendForecast(null);
+      return { ok: false, latencyMs: 0, error: 'Backend URL not configured for static deployment.' };
+    }
     const res = await pingBackendHealth(apiUrl);
     setApiHealthy(res.ok);
     setApiLatencyMs(res.latencyMs);
@@ -361,7 +367,7 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
         const bf = await fetchBackendForecast(apiUrl);
         setBackendForecast(bf);
       } catch {
-        // Keep client Open-Meteo bundle if /api/forecast fails
+        setBackendForecast(null);
       }
     }
     return res;

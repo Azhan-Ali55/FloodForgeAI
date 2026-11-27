@@ -1,9 +1,12 @@
-numpy
-pyyaml
-pytest
+numpy>=1.26
+pyyaml>=6.0
+fastapi>=0.115,<1
+pydantic>=2,<3
+uvicorn[standard]>=0.30,<1
+pytest>=8.0
+# Optional GIS / ML / optimization libraries (not required for core D8 runtime):
 # rasterio
 # geopandas
 # pysheds
 # xgboost
 # ortools
-# streamlit

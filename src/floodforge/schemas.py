@@ -1,14 +1,15 @@
 """Shared data contracts for FloodForge AI.
 
 Every module (twin, simulation, surrogate, optimizer, risk, dashboard) imports
-these types, so all three backend developers code against the same shapes.
+these types so backend modules code against the same shapes and units.
 All rasters are 2D numpy arrays on ONE common grid (same shape, same cell size).
-Outputs are SCREENING-LEVEL, not flood depths or engineering design values.
+Outputs are SCREENING-LEVEL, not hydraulic flood depths or engineering design values.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+import math
 from typing import Protocol
 
 import numpy as np
@@ -20,15 +21,32 @@ class InterventionType(str, Enum):
     DRAINAGE = "drainage"                    # size = extra conveyance in m3/hr
 
 
+VALID_WETNESS_LEVELS = ("dry", "normal", "wet", "saturated")
+
+
 @dataclass(frozen=True)
 class Scenario:
     rainfall_mm_per_hr: float
     duration_hr: float
     budget_pkr: float
+    antecedent_wetness: str | None = None
+    uncertainty_factor: float = 1.0
 
     def __post_init__(self):
-        if self.rainfall_mm_per_hr <= 0 or self.duration_hr <= 0 or self.budget_pkr < 0:
-            raise ValueError("rainfall and duration must be > 0, budget >= 0")
+        for name, val in (
+            ("rainfall_mm_per_hr", self.rainfall_mm_per_hr),
+            ("duration_hr", self.duration_hr),
+            ("budget_pkr", self.budget_pkr),
+            ("uncertainty_factor", self.uncertainty_factor),
+        ):
+            if not math.isfinite(val):
+                raise ValueError(f"{name} must be finite, got {val}")
+        if self.rainfall_mm_per_hr < 0 or self.duration_hr <= 0 or self.budget_pkr < 0:
+            raise ValueError("rainfall must be >= 0, duration > 0, and budget >= 0")
+        if self.uncertainty_factor <= 0:
+            raise ValueError("uncertainty_factor must be > 0")
+        if self.antecedent_wetness is not None and self.antecedent_wetness not in VALID_WETNESS_LEVELS:
+            raise ValueError(f"antecedent_wetness must be one of {VALID_WETNESS_LEVELS}")
 
     @property
     def total_rainfall_mm(self) -> float:
@@ -43,6 +61,14 @@ class Intervention:
     col: int
     size: float       # units depend on type (see InterventionType)
     cost_pkr: float
+
+    def __post_init__(self):
+        if self.row < 0 or self.col < 0:
+            raise ValueError("intervention row and col must be >= 0")
+        if not math.isfinite(self.size) or self.size <= 0:
+            raise ValueError("intervention size must be finite and > 0")
+        if not math.isfinite(self.cost_pkr) or self.cost_pkr < 0:
+            raise ValueError("intervention cost_pkr must be finite and >= 0")
 
 
 @dataclass
@@ -73,6 +99,13 @@ class TwinGrid:
     zones: np.ndarray | None = None      # optional admin zone IDs (e.g. 1=Upstream, 2=Downstream)
 
     def __post_init__(self):
+        if self.dem.ndim != 2 or self.dem.size == 0:
+            raise ValueError(f"dem must be non-empty 2D array, got shape {self.dem.shape}")
+        if not np.all(np.isfinite(self.dem)):
+            raise ValueError("dem contains non-finite (NaN/Inf) elevations")
+        if not math.isfinite(self.cell_size_m) or self.cell_size_m <= 0:
+            raise ValueError(f"cell_size_m must be finite and > 0, got {self.cell_size_m}")
+
         shape = self.dem.shape
         rasters = {
             "land_cover": self.land_cover,

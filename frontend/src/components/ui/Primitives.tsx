@@ -1,8 +1,37 @@
-import React, { useState } from 'react';
-import { HelpCircle } from 'lucide-react';
-import { ALERT_TIER_META, STATION_RISK_META } from '../../engine/pilotConfig';
+import React from 'react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ALERT_TIER_META, PILOT_CONFIG, STATION_RISK_META } from '../../engine/pilotConfig';
 import type { AlertTier, ScenarioTag, StationRiskLevel } from '../../types/floodforge';
 import { cn } from '../../utils/cn';
+
+/**
+ * Standardized municipal page header with title, concise subtitle, and optional actions.
+ */
+export function PageHeader({
+  title,
+  subtitle,
+  rightSlot,
+}: {
+  title: string;
+  subtitle?: string;
+  rightSlot?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="font-heading text-xl font-bold text-[#173C79] tracking-tight">
+          {title}
+        </h1>
+        {subtitle && (
+          <p className="text-xs sm:text-sm text-[#5A6A7E] mt-0.5 leading-snug">
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {rightSlot && <div className="flex flex-wrap items-center gap-2 flex-shrink-0">{rightSlot}</div>}
+    </div>
+  );
+}
 
 /**
  * Municipal white panel card with thin grey border and subtle elevation.
@@ -25,6 +54,122 @@ export function PanelCard({
       )}
     >
       {children}
+    </div>
+  );
+}
+
+/**
+ * Standardized KPI stat card used across dashboards, telemetry, and reports.
+ */
+export function StatCard({
+  label,
+  value,
+  subtext,
+  icon,
+  tone = 'neutral',
+  className,
+}: {
+  label: string;
+  value: React.ReactNode;
+  subtext?: React.ReactNode;
+  icon?: React.ReactNode;
+  tone?: 'neutral' | 'primary' | 'success' | 'warning' | 'danger';
+  className?: string;
+}) {
+  const toneStyles: Record<typeof tone, { card: string; label: string; value: string }> = {
+    neutral: {
+      card: 'bg-white border-[#D6DCE4]',
+      label: 'text-[#5A6A7E]',
+      value: 'text-[#26364A]',
+    },
+    primary: {
+      card: 'bg-[#EEF3FA] border-[#173C79]/35',
+      label: 'text-[#173C79]',
+      value: 'text-[#173C79]',
+    },
+    success: {
+      card: 'bg-[#EDF7EE] border-[#55A85F]/50',
+      label: 'text-[#2F6F37]',
+      value: 'text-[#2F6F37]',
+    },
+    warning: {
+      card: 'bg-[#FDF1E7] border-[#EF8735]/50',
+      label: 'text-[#A64D0B]',
+      value: 'text-[#C75E10]',
+    },
+    danger: {
+      card: 'bg-[#FBEBEB] border-[#D94343]/50',
+      label: 'text-[#A12323]',
+      value: 'text-[#D94343]',
+    },
+  };
+  const st = toneStyles[tone];
+
+  return (
+    <div className={cn('p-3 rounded-sm border', st.card, className)}>
+      <div className={cn('flex items-center justify-between text-[10px] font-bold uppercase tracking-wider', st.label)}>
+        <span>{label}</span>
+        {icon}
+      </div>
+      <div className={cn('text-xl sm:text-2xl font-bold font-mono mt-0.5 flex items-center gap-2', st.value)}>
+        {value}
+      </div>
+      {subtext && (
+        <div className="text-[11px] font-mono text-[#5A6A7E] mt-0.5 truncate">
+          {subtext}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Unified Equity Audit & No-Flood-Risk status banner (uses Lucide icons, no emojis).
+ */
+export function EquityStatusBanner({
+  hasFloodRisk,
+  equityFlagged,
+  rightSlot,
+  description,
+  className,
+}: {
+  hasFloodRisk: boolean;
+  equityFlagged: boolean;
+  rightSlot?: React.ReactNode;
+  description?: string;
+  className?: string;
+}) {
+  const isWarning = hasFloodRisk && equityFlagged;
+  const Icon = isWarning ? AlertTriangle : CheckCircle2;
+  const title = !hasFloodRisk
+    ? 'No Flood Risk Modeled: Mitigation solutions are not required under current conditions.'
+    : isWarning
+      ? 'Risk Transfer Warning: Downstream Rawalpindi building exposure rose >2%.'
+      : PILOT_CONFIG.equity_pass_banner;
+
+  return (
+    <div
+      role="status"
+      className={cn(
+        'px-3.5 py-2 rounded-sm border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs',
+        isWarning
+          ? 'bg-[#FBEBEB] border-[#D94343] text-[#A12323]'
+          : 'bg-[#EDF7EE] border-[#55A85F] text-[#2F6F37]',
+        className
+      )}
+    >
+      <div className="flex items-start sm:items-center gap-2 min-w-0">
+        <Icon className="w-4 h-4 flex-shrink-0 mt-0.5 sm:mt-0" />
+        <div className="min-w-0">
+          <div className="font-semibold leading-snug">{title}</div>
+          {description && (
+            <p className="text-[11px] text-[#26364A] mt-0.5 leading-snug">{description}</p>
+          )}
+        </div>
+      </div>
+      {rightSlot && (
+        <div className="font-mono text-[11px] font-semibold flex-shrink-0">{rightSlot}</div>
+      )}
     </div>
   );
 }
@@ -65,31 +210,6 @@ export function MunicipalPanel({
       </div>
       <div className={bodyClassName}>{children}</div>
     </section>
-  );
-}
-
-export function InfoTooltip({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span
-      className="relative inline-flex items-center"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label="Metric explanation"
-        className="text-[#5A6A7E] hover:text-[#173C79] transition-colors cursor-pointer"
-      >
-        <HelpCircle className="w-3.5 h-3.5" />
-      </button>
-      {open && (
-        <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 p-2.5 rounded bg-[#FFFFFF] border border-[#CBD5E1] text-[11px] leading-relaxed text-[#26364A] shadow-lg pointer-events-none">
-          {text}
-        </span>
-      )}
-    </span>
   );
 }
 

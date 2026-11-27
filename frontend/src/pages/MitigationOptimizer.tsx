@@ -20,7 +20,13 @@ import {
 } from 'recharts';
 import { normalizeWeights } from '../engine/optimizer';
 import { PILOT_CONFIG } from '../engine/pilotConfig';
-import { MunicipalPanel, PanelCard } from '../components/ui/Primitives';
+import { BudgetControlCard } from '../components/ui/BudgetControlCard';
+import {
+  EquityStatusBanner,
+  MunicipalPanel,
+  PageHeader,
+  StatCard,
+} from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
 import type { InterventionType, OptimizationWeights } from '../types/floodforge';
 import { cn } from '../utils/cn';
@@ -102,72 +108,73 @@ export function MitigationOptimizer() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-bold text-[#173C79]">
-            Flood Mitigation Investment Optimizer
-          </h1>
-          <p className="text-xs sm:text-sm text-[#5A6A7E]">
-            {PILOT_CONFIG.comparison_label}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#26364A]">
-          <div className="flex items-center rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] p-0.5 font-sans font-semibold text-[11px]">
-            <button
-              type="button"
-              onClick={() => setOperationalMode('live_ops')}
-              className={cn(
-                'px-2.5 py-1 rounded-xs cursor-pointer',
-                operationalMode === 'live_ops' ? 'bg-[#173C79] text-white' : 'text-[#5A6A7E]'
-              )}
-            >
-              Live Ops (50mm)
-            </button>
-            <button
-              type="button"
-              onClick={() => setOperationalMode('demo_2001')}
-              className={cn(
-                'px-2.5 py-1 rounded-xs cursor-pointer',
-                operationalMode === 'demo_2001' ? 'bg-[#D94343] text-white' : 'text-[#5A6A7E]'
-              )}
-            >
-              2001 Demo (150mm)
-            </button>
+      <PageHeader
+        title="Flood Mitigation Investment Optimizer"
+        subtitle={PILOT_CONFIG.comparison_label}
+        rightSlot={
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#26364A]">
+            <div className="flex items-center rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] p-0.5 font-sans font-semibold text-[11px]">
+              <button
+                type="button"
+                onClick={() => setOperationalMode('live_ops')}
+                className={cn(
+                  'px-2.5 py-1 rounded-xs cursor-pointer',
+                  operationalMode === 'live_ops' ? 'bg-[#173C79] text-white' : 'text-[#5A6A7E]'
+                )}
+              >
+                Live Ops (50mm)
+              </button>
+              <button
+                type="button"
+                onClick={() => setOperationalMode('demo_2001')}
+                className={cn(
+                  'px-2.5 py-1 rounded-xs cursor-pointer',
+                  operationalMode === 'demo_2001' ? 'bg-[#D94343] text-white' : 'text-[#5A6A7E]'
+                )}
+              >
+                2001 Demo (150mm)
+              </button>
+            </div>
+            {optResult && (
+              <span className="px-2.5 py-1 rounded-sm bg-[#EDF7EE] border border-[#55A85F]/50 text-[#2F6F37] font-sans font-semibold text-[11px]">
+                {activeThresholdMm} mm {operationalMode === 'demo_2001' ? 'Severe Cutoff' : 'Flood Cutoff'}
+              </span>
+            )}
           </div>
-          {optResult && (
-            <span className="px-2.5 py-1 rounded-sm bg-[#EDF7EE] border border-[#55A85F]/50 text-[#2F6F37] font-sans font-semibold text-[11px]">
-              {activeThresholdMm} mm {operationalMode === 'demo_2001' ? 'Severe Cutoff' : 'Flood Cutoff'}
-            </span>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       {optResult && (
-        <div
-          className={cn(
-            'px-4 py-2.5 rounded border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-semibold',
-            optResult.equityStatus === 'RISK_TRANSFER_CONCERN' || optResult.optimizedResult.risk_transfer?.flagged
-              ? 'bg-[#FBEBEB] border-[#D94343] text-[#A12323]'
-              : 'bg-[#EDF7EE] border-[#55A85F] text-[#2F6F37]'
-          )}
-        >
-          <span>
-            {optResult.baselineResult.metrics.exposed_area_km2 <= 0 &&
-            optResult.baselineResult.metrics.buildings_exposed === 0
-              ? '✅ No Flood Risk Modeled: Mitigation solutions are not required under current dry conditions.'
-              : optResult.equityStatus === 'RISK_TRANSFER_CONCERN' ||
-                  optResult.optimizedResult.risk_transfer?.flagged
-                ? '⚠️ Risk Transfer Warning: Downstream Rawalpindi exposure exceeded tolerance.'
-                : PILOT_CONFIG.equity_pass_banner}
-          </span>
-          <span className="font-mono text-[11px]">
-            Buildings Saved: {Math.max(0, optResult.baselineResult.metrics.buildings_exposed - optResult.optimizedResult.metrics.buildings_exposed)} · Area Reduction: -
-            {optResult.baselineResult.metrics.exposed_area_km2 > 0
-              ? (((optResult.baselineResult.metrics.exposed_area_km2 - optResult.optimizedResult.metrics.exposed_area_km2) / optResult.baselineResult.metrics.exposed_area_km2) * 100).toFixed(1)
-              : '0.0'}
-            %
-          </span>
-        </div>
+        <EquityStatusBanner
+          hasFloodRisk={
+            optResult.baselineResult.metrics.exposed_area_km2 > 0 ||
+            optResult.baselineResult.metrics.buildings_exposed > 0
+          }
+          equityFlagged={
+            optResult.equityStatus === 'RISK_TRANSFER_CONCERN' ||
+            Boolean(optResult.optimizedResult.risk_transfer?.flagged)
+          }
+          rightSlot={
+            <>
+              Buildings Saved:{' '}
+              {Math.max(
+                0,
+                optResult.baselineResult.metrics.buildings_exposed -
+                  optResult.optimizedResult.metrics.buildings_exposed
+              )}{' '}
+              · Area Reduction: -
+              {optResult.baselineResult.metrics.exposed_area_km2 > 0
+                ? (
+                    ((optResult.baselineResult.metrics.exposed_area_km2 -
+                      optResult.optimizedResult.metrics.exposed_area_km2) /
+                      optResult.baselineResult.metrics.exposed_area_km2) *
+                    100
+                  ).toFixed(1)
+                : '0.0'}
+              %
+            </>
+          }
+        />
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
@@ -177,50 +184,13 @@ export function MitigationOptimizer() {
           className="xl:col-span-4"
           bodyClassName="p-4 space-y-5"
         >
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <label className="text-[#5A6A7E] font-medium">Municipal Budget (PKR)</label>
-              <span className="font-mono font-bold text-[#173C79]">
-                {formatPKR(optConfig.budgetPkr)}
-              </span>
-            </div>
-            <input
-              type="range"
-              aria-label="Optimizer budget slider"
-              min={50_000_000}
-              max={300_000_000}
-              step={5_000_000}
-              value={Math.min(300_000_000, Math.max(50_000_000, optConfig.budgetPkr))}
-              onChange={(e) => setPitchBudgetPkr(Number(e.target.value))}
-              className="w-full"
-            />
-            <div className="flex items-center justify-between text-[10px] font-mono text-[#5A6A7E]">
-              <span>PKR 50M</span>
-              <span>PKR 150M</span>
-              <span>PKR 200M</span>
-              <span>PKR 300M</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={50_000_000}
-                max={300_000_000}
-                step={5_000_000}
-                value={optConfig.budgetPkr}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  if (Number.isFinite(val) && val >= 0) {
-                    setOptConfig((prev) => ({ ...prev, budgetPkr: val }));
-                  }
-                }}
-                onBlur={(e) => {
-                  setPitchBudgetPkr(Number(e.target.value) || 50_000_000);
-                }}
-                className="flex-1 px-2.5 py-1.5 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] font-mono text-xs text-[#26364A]"
-              />
-              <span className="text-[11px] font-mono text-[#5A6A7E]">PKR</span>
-            </div>
-          </div>
+          <BudgetControlCard
+            ariaLabel="Optimizer budget slider"
+            inputId="optimizer-budget-slider"
+            budgetPkr={optConfig.budgetPkr}
+            onBudgetChange={setPitchBudgetPkr}
+            showNumericInput
+          />
 
           <div className="space-y-2 pt-2 border-t border-[#E6EAEF]">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#5A6A7E]">
@@ -325,85 +295,66 @@ export function MitigationOptimizer() {
           {optResult && (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <PanelCard padding="p-3.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
-                    Total Budget
-                  </div>
-                  <div className="text-lg font-bold font-mono text-[#26364A] mt-1">
-                    {formatPKR(optResult.totalBudgetPkr)}
-                  </div>
-                  <div className="text-[10px] text-[#5A6A7E] mt-0.5">Allocated ceiling</div>
-                </PanelCard>
+                <StatCard
+                  label="Total Budget"
+                  value={<span className="text-lg">{formatPKR(optResult.totalBudgetPkr)}</span>}
+                  subtext="Allocated ceiling"
+                />
 
-                <PanelCard padding="p-3.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
-                    Total Intervention Cost
-                  </div>
-                  <div className="text-lg font-bold font-mono text-[#173C79] mt-1">
-                    {formatPKR(optResult.totalCostPkr)}
-                  </div>
-                  <div className="text-[10px] text-[#55A85F] mt-0.5 font-mono font-semibold">
-                    {optResult.utilizationPct}% utilized
-                  </div>
-                </PanelCard>
+                <StatCard
+                  tone="primary"
+                  label="Total Intervention Cost"
+                  value={<span className="text-lg">{formatPKR(optResult.totalCostPkr)}</span>}
+                  subtext={`${optResult.utilizationPct}% utilized`}
+                />
 
-                <PanelCard padding="p-3.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
-                    Remaining Budget
-                  </div>
-                  <div className="text-lg font-bold font-mono text-[#26364A] mt-1">
-                    {formatPKR(optResult.remainingBudgetPkr)}
-                  </div>
-                  <div className="text-[10px] text-[#5A6A7E] mt-0.5">Unspent reserve</div>
-                </PanelCard>
+                <StatCard
+                  label="Remaining Budget"
+                  value={<span className="text-lg">{formatPKR(optResult.remainingBudgetPkr)}</span>}
+                  subtext="Unspent reserve"
+                />
 
-                <PanelCard padding="p-3.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
-                    Selected Interventions
-                  </div>
-                  <div className="text-lg font-bold font-mono text-[#26364A] mt-1 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-[#55A85F]" />
-                    {optResult.selectedPortfolio.length} Sites
-                  </div>
-                  <div className="text-[10px] text-[#5A6A7E] mt-0.5">
-                    {optResult.allCandidates.length === 0
+                <StatCard
+                  label="Selected Interventions"
+                  icon={<CheckCircle2 className="w-4 h-4 text-[#55A85F]" />}
+                  value={<span className="text-lg">{optResult.selectedPortfolio.length} Sites</span>}
+                  subtext={
+                    optResult.allCandidates.length === 0
                       ? 'No flood risk — no solution needed'
-                      : `Out of ${optResult.allCandidates.length} evaluated`}
-                  </div>
-                </PanelCard>
+                      : `Out of ${optResult.allCandidates.length} evaluated`
+                  }
+                />
 
-                <PanelCard padding="p-3.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
-                    Est. Exposure Reduction
-                  </div>
-                  <div className="text-lg font-bold font-mono text-[#55A85F] mt-1 flex items-center gap-1">
-                    <TrendingUp className="w-4 h-4" />
-                    -{optResult.weightedReductionPct}%
-                  </div>
-                  <div className="text-[10px] text-[#5A6A7E] mt-0.5">Weighted objective gain</div>
-                </PanelCard>
+                <StatCard
+                  tone="success"
+                  label="Est. Exposure Reduction"
+                  icon={<TrendingUp className="w-4 h-4 text-[#55A85F]" />}
+                  value={<span className="text-lg">-{optResult.weightedReductionPct}%</span>}
+                  subtext="Weighted objective gain"
+                />
 
-                <PanelCard padding="p-3.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
-                    Lift vs. Random Portfolios
-                  </div>
-                  <div className="text-lg font-bold font-mono text-[#EF8735] mt-1 flex items-center gap-1">
-                    <Zap className="w-4 h-4" />
-                    +{optResult.improvementOverRandomPct}%
-                  </div>
-                  <div className="text-[10px] text-[#5A6A7E] mt-0.5">
-                    Random avg: -{optResult.avgRandomReductionPct}%
-                  </div>
-                </PanelCard>
+                <StatCard
+                  tone="warning"
+                  label="Lift vs. Random Portfolios"
+                  icon={<Zap className="w-4 h-4 text-[#EF8735]" />}
+                  value={<span className="text-lg">+{optResult.improvementOverRandomPct}%</span>}
+                  subtext={`Random avg: -${optResult.avgRandomReductionPct}%`}
+                />
               </div>
 
               <MunicipalPanel
                 title="Multi-Budget Pareto Frontier vs. Random Portfolios"
                 rightSlot={
                   <div className="flex items-center gap-3 text-[10px]">
-                    <span className="text-white/90">● Pareto</span>
-                    <span className="text-[#9AE6B4]">● Selected</span>
-                    <span className="text-[#FBD38D]">● Random</span>
+                    <span className="inline-flex items-center gap-1 text-white/90">
+                      <span className="w-2 h-2 rounded-full bg-white" /> Pareto
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[#9AE6B4]">
+                      <span className="w-2 h-2 rounded-full bg-[#9AE6B4]" /> Selected
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[#FBD38D]">
+                      <span className="w-2 h-2 rounded-full bg-[#FBD38D]" /> Random
+                    </span>
                   </div>
                 }
               >

@@ -23,6 +23,8 @@ import { latLonToUtm43N, PILOT_CONFIG, STATION_RISK_META } from '../../engine/pi
 import {
   renderRasterOverlayDataUrl,
   renderSafeZonesOverlayDataUrl,
+  renderVegetationBaseUrl,
+  renderZoneOverlayDataUrl,
 } from '../../services/mapService';
 import type {
   AlertTier,
@@ -91,85 +93,6 @@ const BASEMAP_URLS: Record<
     label: 'Vector Only',
   },
 };
-
-/**
- * Generates a lightweight green vegetation mask overlay from twin.land_cover
- * so green parks, tree cover, and riparian vegetation always render cleanly.
- */
-function renderVegetationBaseUrl(twin: TwinGrid): string {
-  const { rows, cols, land_cover } = twin;
-  const canvas = document.createElement('canvas');
-  canvas.width = cols;
-  canvas.height = rows;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return '';
-  const img = ctx.createImageData(cols, rows);
-  const data = img.data;
-
-  for (let i = 0; i < rows * cols; i++) {
-    const p = i * 4;
-    const lc = land_cover[i];
-    if (lc === 10) {
-      // Tree cover / forest
-      data[p] = 162;
-      data[p + 1] = 207;
-      data[p + 2] = 148;
-      data[p + 3] = 145;
-    } else if (lc === 20 || lc === 30) {
-      // Shrubland / grassland
-      data[p] = 191;
-      data[p + 1] = 224;
-      data[p + 2] = 175;
-      data[p + 3] = 115;
-    } else if (lc === 40) {
-      data[p] = 212;
-      data[p + 1] = 232;
-      data[p + 2] = 188;
-      data[p + 3] = 90;
-    } else {
-      data[p + 3] = 0;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  return canvas.toDataURL();
-}
-
-/**
- * Generates a subtle translucent Zone 1 (Upstream Islamabad - Blue) vs.
- * Zone 2 (Downstream Rawalpindi - Amber) raster tint from twin.zones.
- */
-function renderZoneOverlayDataUrl(twin: TwinGrid): string {
-  const { rows, cols, zones } = twin;
-  const canvas = document.createElement('canvas');
-  canvas.width = cols;
-  canvas.height = rows;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return '';
-  const img = ctx.createImageData(cols, rows);
-  const data = img.data;
-
-  for (let i = 0; i < rows * cols; i++) {
-    const p = i * 4;
-    const z = zones[i];
-    if (z === 1) {
-      // Zone 1: Upstream Islamabad (#173C79 Blue tint)
-      data[p] = 23;
-      data[p + 1] = 60;
-      data[p + 2] = 121;
-      data[p + 3] = 40;
-    } else if (z >= 2) {
-      // Zone 2: Downstream Rawalpindi (#EF8735 Amber tint)
-      data[p] = 239;
-      data[p + 1] = 135;
-      data[p + 2] = 53;
-      data[p + 3] = 40;
-    } else {
-      data[p + 3] = 0;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  return canvas.toDataURL();
-}
 
 function StationPopupCard({
   station,

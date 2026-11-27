@@ -44,8 +44,10 @@ export interface Scenario {
 
 export interface BackendForecastSummary {
   source: string;
-  soil_moisture_0_to_1cm: number;
-  antecedent_wetness: AntecedentWetnessLevel;
+  provenance?: string;
+  aligned_pkt_time?: string | null;
+  soil_moisture_0_to_1cm: number | null;
+  antecedent_wetness: AntecedentWetnessLevel | 'unavailable';
   peak_6h_total_mm: number;
   peak_6h_rate_mm_per_hr: number;
   peak_6h_window_start: string | null;
@@ -53,7 +55,7 @@ export interface BackendForecastSummary {
   peak_1h_mm_per_hr: number;
   hourly_time?: string[];
   hourly_precipitation_mm?: number[];
-  hourly_soil_moisture_0_to_1cm?: number[];
+  hourly_soil_moisture_0_to_1cm?: Array<number | null>;
 }
 
 export interface Intervention {
@@ -153,6 +155,7 @@ export interface SimResult {
   uncertainty: Record<string, [number, number]>;
   assumptions: string[];
   screening_level: boolean;
+  engineSource?: 'python_api' | 'local_d8';
   scenario_tag: ScenarioTag;
   alert_tier: AlertTier;
   runtime_ms: number;

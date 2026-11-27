@@ -8,7 +8,12 @@ import {
   Thermometer,
   Wind,
 } from 'lucide-react';
-import { MunicipalPanel, StationRiskBadge } from '../components/ui/Primitives';
+import {
+  MunicipalPanel,
+  PageHeader,
+  StatCard,
+  StationRiskBadge,
+} from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
 import { formatSoilMoistureStatus } from '../services/forecastService';
 import { cn } from '../utils/cn';
@@ -48,83 +53,82 @@ export function LiveMonitoring() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-bold text-[#173C79]">
-            Live Environmental &amp; Station Telemetry
-          </h1>
-          <p className="text-xs sm:text-sm text-[#5A6A7E]">
-            Real-time meteorological feed (Open-Meteo), Nullah Lai monitoring node status, and data source diagnostics.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => refreshWeather()}
-          disabled={isSyncingWeather}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm bg-[#173C79] hover:bg-[#244D8F] text-white text-xs font-semibold cursor-pointer self-start"
-        >
-          <RefreshCw className={cn('w-3.5 h-3.5', isSyncingWeather && 'animate-spin')} />
-          Refresh Telemetry
-        </button>
-      </div>
+      <PageHeader
+        title="Live Environmental & Station Telemetry"
+        subtitle="Real-time meteorological feed and Nullah Lai corridor monitoring status."
+        rightSlot={
+          <button
+            type="button"
+            onClick={() => refreshWeather()}
+            disabled={isSyncingWeather}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm bg-[#173C79] hover:bg-[#244D8F] text-white text-xs font-semibold cursor-pointer"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', isSyncingWeather && 'animate-spin')} />
+            Refresh Telemetry
+          </button>
+        }
+      />
 
       {/* Top Current Weather & Station Risk Summary Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-        <div className="bg-white border border-[#D6DCE4] rounded p-3">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#5A6A7E]">
-            <CloudRain className="w-3.5 h-3.5 text-[#244D8F]" />
-            Current Rainfall
-          </div>
-          <div className="text-lg font-bold font-mono text-[#173C79] mt-1">
-            {weather.currentWeather.precipitationMm !== null
-              ? `${weather.currentWeather.precipitationMm.toFixed(1)} mm/h`
-              : 'Data unavailable'}
-          </div>
-        </div>
-        <div className="bg-white border border-[#D6DCE4] rounded p-3">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#5A6A7E]">
-            <Thermometer className="w-3.5 h-3.5 text-[#EF8735]" />
-            Air Temperature
-          </div>
-          <div className="text-lg font-bold font-mono text-[#26364A] mt-1">
-            {weather.currentWeather.temperatureC !== null
-              ? `${weather.currentWeather.temperatureC.toFixed(1)} °C`
-              : 'Data unavailable'}
-          </div>
-        </div>
-        <div className="bg-white border border-[#D6DCE4] rounded p-3">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#5A6A7E]">
-            <Wind className="w-3.5 h-3.5 text-[#55A85F]" />
-            Wind Speed
-          </div>
-          <div className="text-lg font-bold font-mono text-[#26364A] mt-1">
-            {weather.currentWeather.windSpeedKmh !== null
-              ? `${weather.currentWeather.windSpeedKmh.toFixed(1)} km/h`
-              : 'Data unavailable'}
-          </div>
-        </div>
-        <div className="bg-white border border-[#D6DCE4] rounded p-3">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#5A6A7E]">
-            <Droplets className="w-3.5 h-3.5 text-[#244D8F]" />
-            Soil Moisture (0–9 cm)
-          </div>
-          <div className="text-sm font-semibold font-mono text-[#173C79] mt-1.5">
-            {soilMoisture.combinedLabel}
-          </div>
-        </div>
-        <div className="bg-white border border-[#D6DCE4] rounded p-3">
-          <div className="text-[11px] text-[#5A6A7E]">Low / Moderate Stations</div>
-          <div className="text-lg font-bold font-mono text-[#55A85F] mt-1">
-            {statusSummary.Low + statusSummary.Moderate} / {monitoringStations.length}
-          </div>
-        </div>
-        <div className="bg-white border border-[#D6DCE4] rounded p-3">
-          <div className="text-[11px] text-[#5A6A7E]">High / Critical Stations</div>
-          <div className="text-lg font-bold font-mono text-[#D94343] mt-1">
-            {statusSummary.High + statusSummary.Critical} / {monitoringStations.length}
-          </div>
-        </div>
+        <StatCard
+          label="Current Rainfall"
+          icon={<CloudRain className="w-3.5 h-3.5 text-[#244D8F]" />}
+          tone="primary"
+          value={
+            <span className="text-lg">
+              {weather.currentWeather.precipitationMm !== null
+                ? `${weather.currentWeather.precipitationMm.toFixed(1)} mm/h`
+                : 'Unavailable'}
+            </span>
+          }
+        />
+        <StatCard
+          label="Air Temperature"
+          icon={<Thermometer className="w-3.5 h-3.5 text-[#EF8735]" />}
+          value={
+            <span className="text-lg">
+              {weather.currentWeather.temperatureC !== null
+                ? `${weather.currentWeather.temperatureC.toFixed(1)} °C`
+                : 'Unavailable'}
+            </span>
+          }
+        />
+        <StatCard
+          label="Wind Speed"
+          icon={<Wind className="w-3.5 h-3.5 text-[#55A85F]" />}
+          value={
+            <span className="text-lg">
+              {weather.currentWeather.windSpeedKmh !== null
+                ? `${weather.currentWeather.windSpeedKmh.toFixed(1)} km/h`
+                : 'Unavailable'}
+            </span>
+          }
+        />
+        <StatCard
+          label="Soil Moisture (0–9 cm)"
+          icon={<Droplets className="w-3.5 h-3.5 text-[#244D8F]" />}
+          tone="primary"
+          value={<span className="text-sm">{soilMoisture.combinedLabel}</span>}
+        />
+        <StatCard
+          label="Low / Moderate"
+          tone="success"
+          value={
+            <span className="text-lg">
+              {statusSummary.Low + statusSummary.Moderate} / {monitoringStations.length}
+            </span>
+          }
+        />
+        <StatCard
+          label="High / Critical"
+          tone={statusSummary.High + statusSummary.Critical > 0 ? 'danger' : 'neutral'}
+          value={
+            <span className="text-lg">
+              {statusSummary.High + statusSummary.Critical} / {monitoringStations.length}
+            </span>
+          }
+        />
       </div>
 
       {/* Monitoring Stations Table */}

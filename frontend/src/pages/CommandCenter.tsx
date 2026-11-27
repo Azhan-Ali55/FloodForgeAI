@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity,
   AlertTriangle,
   BellRing,
   Building2,
@@ -12,13 +11,10 @@ import {
   CloudRain,
   CloudSun,
   Coins,
-  Download,
   Droplets,
-  FileBarChart2,
   Gauge,
   Loader2,
   MapPin,
-  Printer,
   ShieldAlert,
   ShieldCheck,
   Sun,
@@ -43,11 +39,15 @@ import {
   YAxis,
 } from 'recharts';
 import { GeospatialMap } from '../components/maps/GeospatialMap';
+import { BudgetControlCard } from '../components/ui/BudgetControlCard';
 import {
+  EquityStatusBanner,
   MunicipalPanel,
   ScenarioTagBadge,
+  StatCard,
   StationRiskBadge,
 } from '../components/ui/Primitives';
+import { ReportActionButtons } from '../components/ui/ReportActionButtons';
 import { useFloodForge } from '../context/FloodForgeContext';
 import {
   buildPreparednessActions,
@@ -69,7 +69,6 @@ import type {
 } from '../types/floodforge';
 import { cn } from '../utils/cn';
 import { formatNumber } from '../utils/formatters';
-import { downloadMitigationReportCsv } from '../utils/reportExport';
 
 function WeatherConditionIcon({ code }: { code: number | null }) {
   if (code === null) return <Cloud className="w-5 h-5 text-[#5A6A7E]" />;
@@ -118,7 +117,6 @@ export function CommandCenter() {
     engineMode,
     apiHealthy,
     officialAgencyOverride,
-    pushToast,
   } = useFloodForge();
 
   const soilMoisture = useMemo(
@@ -535,103 +533,57 @@ export function CommandCenter() {
 
         {/* Budget Slider + Dynamic ROI & Population Impact Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center pt-1">
-          <div className="lg:col-span-4 p-3 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <label htmlFor="money-slide-budget" className="font-semibold text-[#173C79]">
-                Budget Slider (PKR 50M → 300M)
-              </label>
-              <span className="font-mono font-bold text-[#173C79]">
-                PKR {moneySlide.spentM}M / {moneySlide.budgetM}M
-              </span>
-            </div>
-            <input
-              id="money-slide-budget"
-              aria-label="Dashboard Budget Slider"
-              type="range"
-              min={50_000_000}
-              max={300_000_000}
-              step={5_000_000}
-              value={Math.min(300_000_000, Math.max(50_000_000, optConfig.budgetPkr))}
-              onChange={(e) => setPitchBudgetPkr(Number(e.target.value))}
-              className="w-full accent-[#173C79]"
-            />
-            <div className="flex items-center justify-between gap-1.5">
-              {[50_000_000, 150_000_000, 200_000_000, 300_000_000].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setPitchBudgetPkr(preset)}
-                  className={cn(
-                    'flex-1 py-1 rounded-xs text-[10px] font-mono font-semibold border transition-colors cursor-pointer',
-                    optConfig.budgetPkr === preset
-                      ? 'bg-[#173C79] border-[#173C79] text-white'
-                      : 'bg-white border-[#D6DCE4] text-[#5A6A7E] hover:border-[#173C79]'
-                  )}
-                >
-                  {preset / 1_000_000}M
-                </button>
-              ))}
-            </div>
-          </div>
+          <BudgetControlCard
+            className="lg:col-span-4"
+            budgetPkr={optConfig.budgetPkr}
+            spentPkr={optResult?.totalCostPkr ?? 0}
+            onBudgetChange={setPitchBudgetPkr}
+          />
 
           <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5">
-            <div className="p-3 rounded-sm bg-[#EDF7EE] border border-[#55A85F]/50">
-              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-[#2F6F37]">
-                <span>Area Reduction %</span>
-                <TrendingDown className="w-3.5 h-3.5" />
-              </div>
-              <div className="text-2xl font-bold font-mono text-[#2F6F37] mt-0.5 flex items-center gap-2">
-                <span>-{moneySlide.areaReductionPct}%</span>
-                {(isOptimizing || isAutoSyncingOpt) && (
-                  <Loader2 className="w-4 h-4 animate-spin text-[#55A85F]" />
-                )}
-              </div>
-              <div className="text-[11px] font-mono text-[#26364A] mt-0.5">
-                {moneySlide.baseArea.toFixed(2)} → {moneySlide.mitArea.toFixed(2)} km²
-              </div>
-            </div>
+            <StatCard
+              tone="success"
+              label="Area Reduction %"
+              icon={<TrendingDown className="w-3.5 h-3.5" />}
+              value={
+                <>
+                  <span>-{moneySlide.areaReductionPct}%</span>
+                  {(isOptimizing || isAutoSyncingOpt) && (
+                    <Loader2 className="w-4 h-4 animate-spin text-[#55A85F]" />
+                  )}
+                </>
+              }
+              subtext={`${moneySlide.baseArea.toFixed(2)} → ${moneySlide.mitArea.toFixed(2)} km²`}
+            />
 
-            <div className="p-3 rounded-sm bg-[#EEF3FA] border border-[#173C79]/35">
-              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-[#173C79]">
-                <span>Population Protected</span>
-                <Users className="w-3.5 h-3.5" />
-              </div>
-              <div className="text-2xl font-bold font-mono text-[#173C79] mt-0.5">
-                {formatNumber(moneySlide.populationProtected)}
-              </div>
-              <div className="text-[11px] font-mono text-[#5A6A7E] mt-0.5 truncate">
-                Exposed: {formatNumber(moneySlide.basePop)} → {formatNumber(moneySlide.mitPop)}
-              </div>
-            </div>
+            <StatCard
+              tone="primary"
+              label="Population Protected"
+              icon={<Users className="w-3.5 h-3.5" />}
+              value={formatNumber(moneySlide.populationProtected)}
+              subtext={`Exposed: ${formatNumber(moneySlide.basePop)} → ${formatNumber(moneySlide.mitPop)}`}
+            />
 
-            <div className="p-3 rounded-sm bg-[#EEF3FA] border border-[#173C79]/35">
-              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-[#173C79]">
-                <span>Buildings Saved</span>
-                <Building2 className="w-3.5 h-3.5" />
-              </div>
-              <div className="text-2xl font-bold font-mono text-[#173C79] mt-0.5">
-                {moneySlide.buildingsSaved}
-              </div>
-              <div className="text-[11px] font-mono text-[#5A6A7E] mt-0.5">
-                Exposed: {moneySlide.baseBldg} → {moneySlide.mitBldg}
-              </div>
-            </div>
+            <StatCard
+              tone="primary"
+              label="Buildings Saved"
+              icon={<Building2 className="w-3.5 h-3.5" />}
+              value={moneySlide.buildingsSaved}
+              subtext={`Exposed: ${moneySlide.baseBldg} → ${moneySlide.mitBldg}`}
+            />
 
-            <div className="p-3 rounded-sm bg-white border border-[#D6DCE4]">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#5A6A7E]">
-                Interventions &amp; Frontier
-              </div>
-              <div className="text-2xl font-bold font-mono text-[#26364A] mt-0.5">
-                {moneySlide.sites} Sites
-              </div>
-              <div className="text-[11px] font-mono text-[#5A6A7E] mt-0.5">
-                {!moneySlide.hasFloodRisk
+            <StatCard
+              tone="neutral"
+              label="Interventions & Frontier"
+              value={`${moneySlide.sites} Sites`}
+              subtext={
+                !moneySlide.hasFloodRisk
                   ? 'No flood risk — no solution needed'
                   : moneySlide.sites >= 40
                     ? 'Pareto optimum (~230M)'
-                    : `Budget cap: ${moneySlide.budgetM}M PKR`}
-              </div>
-            </div>
+                    : `Budget cap: ${moneySlide.budgetM}M PKR`
+              }
+            />
           </div>
         </div>
 
@@ -658,76 +610,19 @@ export function CommandCenter() {
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => navigate('/reports')}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-[#173C79] hover:bg-[#244D8F] text-white font-semibold text-[11px] cursor-pointer transition-colors"
-            >
-              <FileBarChart2 className="w-3.5 h-3.5" />
-              Open Full Report
-            </button>
-            {optResult && (
-              <button
-                type="button"
-                onClick={() => {
-                  downloadMitigationReportCsv({
-                    modeLabel:
-                      operationalMode === 'demo_2001'
-                        ? '2001 Cloudburst Weather Replay'
-                        : 'Live Operations Forecast',
-                    timestampPkt: weather.fetchedAtPkt,
-                    thresholdMm: activeThresholdMm,
-                    soilMoistureLabel: soilMoisture.combinedLabel,
-                    optResult,
-                    weather,
-                  });
-                  pushToast(
-                    'Report Downloaded',
-                    'Saved municipal budget, population impact & equity CSV report.',
-                    'success'
-                  );
-                }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-white hover:bg-[#EEF3FA] border border-[#173C79]/40 text-[#173C79] font-semibold text-[11px] cursor-pointer transition-colors"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Download Report (CSV)
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-white hover:bg-[#EEF3FA] border border-[#CBD5E1] text-[#26364A] font-semibold text-[11px] cursor-pointer transition-colors"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              Print Brief
-            </button>
-          </div>
+          <ReportActionButtons onOpenFullReport={() => navigate('/reports')} compact />
         </div>
 
         {/* Equity Banner */}
-        <div
-          role="status"
-          className={cn(
-            'px-3.5 py-2 rounded-sm border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-semibold',
-            moneySlide.equityFlagged
-              ? 'bg-[#FBEBEB] border-[#D94343] text-[#A12323]'
-              : 'bg-[#EDF7EE] border-[#55A85F] text-[#2F6F37]'
-          )}
-        >
-          <span>
-            {!moneySlide.hasFloodRisk
-              ? '✅ No Flood Risk Modeled: Mitigation solutions are not required under current conditions.'
-              : moneySlide.equityFlagged
-                ? '⚠️ Risk Transfer Warning: Downstream Rawalpindi building exposure rose >2%.'
-                : PILOT_CONFIG.equity_pass_banner}
-          </span>
-          <span className="font-mono text-[11px]">
-            {operationalMode === 'demo_2001'
+        <EquityStatusBanner
+          hasFloodRisk={moneySlide.hasFloodRisk}
+          equityFlagged={moneySlide.equityFlagged}
+          rightSlot={
+            operationalMode === 'demo_2001'
               ? `2001 Weather Replay (${weather.fetchedAtPkt})`
-              : 'Live Weather Operations'}
-          </span>
-        </div>
+              : 'Live Weather Operations'
+          }
+        />
       </MunicipalPanel>
 
       {/* 30-Day Advance Flood Watch & Notification Bar */}
@@ -1174,8 +1069,8 @@ export function CommandCenter() {
                 </div>
               </div>
 
-              <span className="text-[11px] text-[#5A6A7E] font-medium">
-                Click any circular station marker for live telemetry popup
+              <span className="text-[11px] text-[#5A6A7E]">
+                Select any station marker for telemetry
               </span>
             </div>
 
@@ -1437,6 +1332,27 @@ export function CommandCenter() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-3 gap-1.5 text-center pt-1">
+                <div className="p-1.5 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
+                  <div className="text-[9px] uppercase text-[#5A6A7E]">24h Peak</div>
+                  <div className="text-xs font-bold font-mono text-[#244D8F]">
+                    {weather.peakHourlyMm.toFixed(1)} mm/h
+                  </div>
+                </div>
+                <div className="p-1.5 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
+                  <div className="text-[9px] uppercase text-[#5A6A7E]">Rain Prob.</div>
+                  <div className="text-xs font-bold font-mono text-[#26364A]">
+                    {weather.maxProbabilityPct}%
+                  </div>
+                </div>
+                <div className="p-1.5 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
+                  <div className="text-[9px] uppercase text-[#5A6A7E]">Env. Delta</div>
+                  <div className="text-xs font-bold font-mono text-[#EF8735]">
+                    {levelDeltaM > 0 ? `+${levelDeltaM}` : levelDeltaM}%
+                  </div>
+                </div>
+              </div>
+
               <div className="divide-y divide-[#E6EAEF] text-xs pt-1">
                 <div className="py-1.5 flex items-center justify-between">
                   <span className="text-[#5A6A7E]">Affected Monitoring Zones</span>
@@ -1455,53 +1371,6 @@ export function CommandCenter() {
                   <span className="font-mono text-[11px] text-[#26364A]">
                     {weather.fetchedAtPkt}
                   </span>
-                </div>
-              </div>
-            </div>
-          </MunicipalPanel>
-
-          {/* Monitoring Statistics Compact Cards */}
-          <MunicipalPanel
-            title="Monitoring Statistics"
-            icon={<Activity className="w-4 h-4" />}
-          >
-            <div className="grid grid-cols-2 gap-2">
-              <div className="p-2 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
-                <div className="text-[10px] text-[#5A6A7E]">Current Rainfall</div>
-                <div className="text-sm font-bold font-mono text-[#173C79] mt-0.5">
-                  {weather.currentWeather.precipitationMm !== null
-                    ? `${weather.currentWeather.precipitationMm.toFixed(1)} mm/h`
-                    : 'Data unavailable'}
-                </div>
-              </div>
-              <div className="p-2 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
-                <div className="text-[10px] text-[#5A6A7E]">Peak Water Depth</div>
-                <div className="text-sm font-bold font-mono text-[#26364A] mt-0.5">
-                  {peakWaterLevelM.toFixed(2)} m
-                </div>
-              </div>
-              <div className="p-2 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
-                <div className="text-[10px] text-[#5A6A7E]">Envelope Area Delta</div>
-                <div className="text-sm font-bold font-mono text-[#EF8735] mt-0.5">
-                  +{levelDeltaM}%
-                </div>
-              </div>
-              <div className="p-2 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
-                <div className="text-[10px] text-[#5A6A7E]">24h Peak Intensity</div>
-                <div className="text-sm font-bold font-mono text-[#244D8F] mt-0.5">
-                  {weather.peakHourlyMm.toFixed(1)} mm/h
-                </div>
-              </div>
-              <div className="p-2 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
-                <div className="text-[10px] text-[#5A6A7E]">Rain / Flood Prob.</div>
-                <div className="text-sm font-bold font-mono text-[#26364A] mt-0.5">
-                  {weather.maxProbabilityPct}%
-                </div>
-              </div>
-              <div className="p-2 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
-                <div className="text-[10px] text-[#5A6A7E]">Active Alerts</div>
-                <div className="text-sm font-bold font-mono text-[#D94343] mt-0.5">
-                  {activeAlerts.length}
                 </div>
               </div>
             </div>
@@ -1551,11 +1420,9 @@ export function CommandCenter() {
                 );
               })}
 
-              <div className="p-2 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC] flex items-start gap-1.5 text-[10px] text-[#5A6A7E]">
-                <AlertTriangle className="w-3.5 h-3.5 text-[#EF8735] flex-shrink-0 mt-0.5" />
-                <span>
-                  Click any alert to center the map. Screening-level 30 m D8 outputs are for municipal planning support only.
-                </span>
+              <div className="p-2 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC] flex items-center gap-1.5 text-[10px] text-[#5A6A7E]">
+                <AlertTriangle className="w-3.5 h-3.5 text-[#EF8735] flex-shrink-0" />
+                <span>Click any alert above to focus the map.</span>
               </div>
             </div>
           </MunicipalPanel>
