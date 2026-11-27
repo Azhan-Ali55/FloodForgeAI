@@ -154,7 +154,7 @@ function generateCandidatesForTwin(
 
   const threshold = thresholdMm;
   const rad = Math.min(12, Math.max(2, Math.floor(Math.min(rows, cols) / 8)));
-  // Ward set-cover spacing over flooded channels, deep cores, and exposed assets
+  // Ward set-cover spacing over flooded channels, weighted by normalized priority weights
   const uncovered = new Float64Array(rows * cols);
   for (let i = 0; i < rows * cols; i++) {
     if (baseline.accumulation_mm[i] >= threshold * 0.85) {
@@ -162,7 +162,12 @@ function generateCandidatesForTwin(
       const fac =
         (twin.facilities.hospital?.[i] ? 2.0 : 0) +
         (twin.facilities.school?.[i] ? 1.2 : 0);
-      uncovered[i] = 1.0 + deepBonus + buildings[i] * 1.5 + fac;
+      const popTerm = nw.population * Math.min(4.0, (population[i] ?? 0) / 15) * 3.0;
+      const bldTerm = nw.buildings * (buildings[i] ?? 0) * 5.0;
+      const roadTerm = roads[i] ? nw.roads * 4.0 : 0;
+      const facTerm = nw.facilities * fac * 4.0;
+      const areaTerm = nw.area * (1.0 + deepBonus) * 4.0;
+      uncovered[i] = Math.max(0.1, popTerm + bldTerm + roadTerm + facTerm + areaTerm);
     }
   }
 
@@ -243,11 +248,8 @@ function generateCandidatesForTwin(
     }
   }
 
-  void nw;
   void dem;
   void f_imp;
-  void population;
-  void roads;
   void candidates;
   return selected;
 }
@@ -259,6 +261,8 @@ function greedyOptimizeAtBudget(
   candidates: Intervention[],
   budgetPkr: number,
   weights: OptimizationWeights,
+  officialAgencyOverride = false,
+  includeUncertainty = false,
   maxItems = 40
 ): { portfolio: Intervention[]; simResult: SimResult; reductionPct: number } {
   const chosen: Intervention[] = [];
@@ -266,12 +270,27 @@ function greedyOptimizeAtBudget(
   for (const cand of candidates) {
     if (chosen.length >= maxItems || spent >= budgetPkr * 0.96) break;
     if (spent + cand.cost_pkr > budgetPkr) continue;
+
+    if (cand.type === 'drainage_upgrade' || chosen.some((c) => c.type === 'drainage_upgrade')) {
+      const probe = [...chosen, { ...cand, selected: true }];
+      const probeRes = runScenarioLocal(twin, scenario, { interventions: probe }, baseline, false, false);
+      if (probeRes.risk_transfer?.flagged) {
+        continue;
+      }
+    }
+
     chosen.push({ ...cand, selected: true });
     spent += cand.cost_pkr;
   }
-  const simResult = runScenarioLocal(twin, scenario, { interventions: chosen }, baseline, false, false);
+  const simResult = runScenarioLocal(
+    twin,
+    scenario,
+    { interventions: chosen },
+    baseline,
+    officialAgencyOverride,
+    includeUncertainty
+  );
   const reductionPct = computeWeightedReductionPct(baseline, simResult, weights);
-  void runScenarioLocal;
   return {
     portfolio: chosen,
     simResult,
@@ -387,6 +406,8 @@ export function runPortfolioOptimizationLocal(
         trainSamples: twin.rows * twin.cols,
         validationSamples: emptyPareto.length,
       },
+      engineSource: 'local_d8',
+      provenance: 'SIMULATED',
       runtimeMs: Number((performance.now() - t0).toFixed(1)),
     };
   }
@@ -399,40 +420,18 @@ export function runPortfolioOptimizationLocal(
     scenario.threshold_mm ?? PILOT_CONFIG.grid.exposure_threshold_mm
   );
 
-  // 1. Run one full greedy sequence up to max sweep budget, then slice prefixes cleanly
-  const maxSweepBudget = Math.max(300_000_000, config.budgetPkr);
-  const masterOpt = greedyOptimizeAtBudget(
+  // 1. Optimize independently at the user's exact configured budget (never sliced from another budget)
+  const userOpt = greedyOptimizeAtBudget(
     twin,
     scenario,
     baselineResult,
     allCandidates,
-    maxSweepBudget,
+    config.budgetPkr,
     normalizedWeights,
+    officialAgencyOverride,
+    true,
     40
   );
-
-  // Extract user's exact configured budget slice from master trajectory (or run directly if constrained)
-  const userSlice: Intervention[] = [];
-  let userSpent = 0;
-  for (const item of masterOpt.portfolio) {
-    if (userSpent + item.cost_pkr <= config.budgetPkr) {
-      userSlice.push(item);
-      userSpent += item.cost_pkr;
-    }
-  }
-  const userSimFull = runScenarioLocal(
-    twin,
-    scenario,
-    { interventions: userSlice },
-    baselineResult,
-    officialAgencyOverride,
-    true
-  );
-  const userOpt = {
-    portfolio: userSlice,
-    simResult: userSimFull,
-    reductionPct: computeWeightedReductionPct(baselineResult, userSimFull, normalizedWeights),
-  };
 
   const selectedIds = new Set(userOpt.portfolio.map((i) => i.id));
   const mergedCandidates = allCandidates.map((c) => {
@@ -475,7 +474,7 @@ export function runPortfolioOptimizationLocal(
     randomBaselines.reduce((s, r) => s + r.exposureReductionPct, 0) /
     Math.max(1, randomBaselines.length);
 
-  // 3. Multi-budget Pareto Frontier sweep (prefix slices from master greedy trajectory)
+  // 3. Multi-budget Pareto Frontier sweep (each budget level optimized independently)
   const ceilings = Array.from(
     new Set([
       15_000_000,
@@ -495,31 +494,21 @@ export function runPortfolioOptimizationLocal(
 
   for (const b of ceilings) {
     const isCurrent = b === config.budgetPkr;
-    let portfolioForB: Intervention[];
-    let redVal: number;
-
-    if (isCurrent) {
-      portfolioForB = userOpt.portfolio;
-      redVal = userOpt.reductionPct;
-    } else {
-      portfolioForB = [];
-      let bSpent = 0;
-      for (const item of masterOpt.portfolio) {
-        if (bSpent + item.cost_pkr <= b) {
-          portfolioForB.push(item);
-          bSpent += item.cost_pkr;
-        }
-      }
-      const bRes = runScenarioLocal(
-        twin,
-        scenario,
-        { interventions: portfolioForB },
-        baselineResult,
-        false,
-        false
-      );
-      redVal = computeWeightedReductionPct(baselineResult, bRes, normalizedWeights);
-    }
+    const budgetRun = isCurrent
+      ? userOpt
+      : greedyOptimizeAtBudget(
+          twin,
+          scenario,
+          baselineResult,
+          allCandidates,
+          b,
+          normalizedWeights,
+          false,
+          false,
+          40
+        );
+    const portfolioForB = budgetRun.portfolio;
+    const redVal = budgetRun.reductionPct;
 
     const cost = portfolioForB.reduce((s, x) => s + x.cost_pkr, 0);
     // Enforce non-dominated Pareto monotonicity
@@ -592,6 +581,8 @@ export function runPortfolioOptimizationLocal(
       trainSamples: twin.rows * twin.cols,
       validationSamples: rawPareto.length,
     },
+    engineSource: 'local_d8',
+    provenance: 'SIMULATED',
     runtimeMs: Number((performance.now() - t0).toFixed(1)),
   };
 }

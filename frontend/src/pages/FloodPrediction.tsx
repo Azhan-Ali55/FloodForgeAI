@@ -419,10 +419,20 @@ export function FloodPrediction() {
         bodyClassName="p-3.5 space-y-3"
       >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 text-xs">
-          {weather.earliestFloodAlert ? (
+          {weather.forecastState === 'unavailable' ? (
+            <div className="flex items-center gap-2 text-[#8A6700] font-medium">
+              <AlertTriangle className="w-4 h-4 text-[#EF8735] flex-shrink-0" />
+              <span>Weather feed unavailable — displaying fallback profile rather than verified 30-day clear status.</span>
+            </div>
+          ) : weather.earliestFloodAlert ? (
             <div className="flex items-center gap-2 text-[#A12323] font-medium">
               <AlertTriangle className="w-4 h-4 text-[#D94343] flex-shrink-0" />
               <span>{weather.earliestFloodAlert.summary}</span>
+            </div>
+          ) : weather.outlookSource === 'OPEN_METEO_16D_ONLY' || weather.isStale ? (
+            <div className="flex items-center gap-2 text-[#8A6700] font-medium">
+              <AlertTriangle className="w-4 h-4 text-[#EF8735] flex-shrink-0" />
+              <span>Incomplete 30-day coverage ({weather.coveragePct}% hourly verified; Days 17–30 ensemble unavailable).</span>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-[#2F6F37] font-medium">

@@ -42,19 +42,28 @@ export interface Scenario {
   label?: string;
 }
 
+export type ForecastState = 'verified' | 'stale' | 'simulated' | 'unavailable';
+
 export interface BackendForecastSummary {
   source: string;
+  forecast_status?: 'verified' | 'partial' | 'unavailable';
   provenance?: string;
+  fetched_at_utc?: string;
   aligned_pkt_time?: string | null;
+  coverage_pct?: number;
+  missing_future_hours?: number;
   soil_moisture_0_to_1cm: number | null;
   antecedent_wetness: AntecedentWetnessLevel | 'unavailable';
   peak_6h_total_mm: number;
   peak_6h_rate_mm_per_hr: number;
   peak_6h_window_start: string | null;
+  future_24h_total_mm?: number;
+  future_48h_total_mm?: number;
+  future_72h_total_mm?: number;
   total_72h_mm: number;
   peak_1h_mm_per_hr: number;
   hourly_time?: string[];
-  hourly_precipitation_mm?: number[];
+  hourly_precipitation_mm?: Array<number | null>;
   hourly_soil_moisture_0_to_1cm?: Array<number | null>;
 }
 
@@ -190,10 +199,16 @@ export interface DailyWeatherPoint {
   conditionLabel: string;
 }
 
+export type ForecastConfidenceTier = 'HIGHER' | 'LOWER' | 'EXPERIMENTAL' | 'UNAVAILABLE';
+
 export interface OutlookDayPoint {
-  dayOffset: number; // 1..30
+  dayOffset: number; // 1..N (16d NWP or up to 35d ensemble)
   dateIso: string;
   dateLabel: string;
+  monthYearLabel: string;
+  isAvailable: boolean;
+  confidenceTier: ForecastConfidenceTier;
+  confidenceLabel: string;
   rainfallMm: number;
   p90RainfallMm: number;
   probabilityPct: number;
@@ -216,6 +231,7 @@ export interface EarliestFloodAlert {
 
 export interface WeatherBundle {
   source: 'OPEN_METEO_LIVE' | 'LOCAL_CACHE_FALLBACK' | 'SYNTHETIC_DEMO';
+  forecastState: ForecastState;
   outlookSource:
     | 'OPEN_METEO_16D_ENSEMBLE'
     | 'OPEN_METEO_16D_ONLY'
@@ -224,6 +240,8 @@ export interface WeatherBundle {
     | 'FALLBACK_DATA';
   isStale: boolean;
   cacheAgeHours: number;
+  coveragePct: number;
+  missingHoursCount: number;
   fetchedAtIso: string;
   fetchedAtPkt: string;
   lat: number;
@@ -237,6 +255,7 @@ export interface WeatherBundle {
   forecast120hMm: number;
   forecast16dMm: number;
   forecast30dMm: number;
+  peakHourly24hMm: number;
   peakHourlyMm: number;
   maxProbabilityPct: number;
   currentWeather: {
@@ -333,6 +352,8 @@ export interface OptimizationResult {
     trainSamples: number;
     validationSamples: number;
   };
+  engineSource?: 'python_api' | 'local_d8';
+  provenance?: 'SIMULATED' | 'FALLBACK';
   runtimeMs: number;
 }
 

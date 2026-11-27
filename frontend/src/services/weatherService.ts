@@ -10,6 +10,7 @@ import type {
 import { formatPktTime } from '../utils/formatters';
 
 const CACHE_KEY = 'floodforge_weather_cache_v3';
+export const MAX_USABLE_CACHE_AGE_HOURS = 12;
 const OPEN_METEO_BASE =
   import.meta.env.VITE_OPEN_METEO_URL || 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_ENSEMBLE_URL = 'https://ensemble-api.open-meteo.com/v1/ensemble';
@@ -192,12 +193,24 @@ function parseEnsembleDays(
   return map;
 }
 
-function parseOpenMeteoResponse(
+export function parseOpenMeteoResponse(
   raw: OpenMeteoRawResponse,
-  ensemble: OpenMeteoEnsembleResponse | null
+  ensemble: OpenMeteoEnsembleResponse | null,
+  nowMs: number = Date.now()
 ): WeatherBundle {
+  if (
+    !raw ||
+    !raw.hourly ||
+    !Array.isArray(raw.hourly.time) ||
+    !Array.isArray(raw.hourly.precipitation) ||
+    raw.hourly.time.length === 0 ||
+    raw.hourly.precipitation.length === 0
+  ) {
+    throw new Error('Malformed Open-Meteo response: missing hourly time/precipitation arrays');
+  }
   const { hourly, daily } = raw;
-  const nowSec = Math.floor(Date.now() / 1000);
+  const nowSec = Math.floor(nowMs / 1000);
+  const curHourFloorSec = Math.floor(nowMs / 3600_000) * 3600;
   const times = hourly.time;
 
   let interpolatedCount = 0;
@@ -222,8 +235,10 @@ function parseOpenMeteoResponse(
     return fallback;
   };
 
-  let currentIdx = times.findIndex((t) => t >= nowSec);
-  if (currentIdx === -1) currentIdx = Math.max(0, times.length - 120);
+  const currentIdx = times.findIndex((t) => t >= curHourFloorSec);
+  if (currentIdx === -1) {
+    throw new Error('Expired Open-Meteo forecast: all hourly timestamps are elapsed');
+  }
 
   // Aggregate past 7 days daily rainfall
   const pastDailySums: number[] = [];
@@ -247,21 +262,31 @@ function parseOpenMeteoResponse(
     });
   }
 
-  // Extract 120h (5-day) hourly forecast
+  // Extract up to 120h (5-day) future hourly forecast without treating missing precip as zero
   const hourlyForecast: HourlyWeatherPoint[] = [];
   let f24 = 0;
   let f48 = 0;
   let f72 = 0;
   let f120 = 0;
-  let peakHourly = 0;
+  let peakHourly24h = 0;
+  let peakHourly72h = 0;
   let maxProb = 0;
+  let missingFuturePrecipCount = 0;
+  let validFuturePrecipCount = 0;
 
   const limit = Math.min(120, times.length - currentIdx);
   for (let h = 0; h < limit; h++) {
     const idx = currentIdx + h;
+    const rawP = hourly.precipitation[idx];
+    const hasValidP = typeof rawP === 'number' && Number.isFinite(rawP) && rawP >= 0;
+    if (hasValidP) {
+      validFuturePrecipCount++;
+    } else {
+      missingFuturePrecipCount++;
+    }
     const dt = new Date(times[idx] * 1000);
-    const precip = Number((cleanNum(hourly.precipitation, idx, 0) ?? 0).toFixed(1));
-    const prob = Math.round(cleanNum(hourly.precipitation_probability, idx, 10) ?? 10);
+    const precip = hasValidP ? Number(rawP.toFixed(1)) : 0;
+    const prob = Math.round(cleanNum(hourly.precipitation_probability, idx, 0) ?? 0);
     const tempRaw = cleanNum(hourly.temperature_2m, idx, null, false);
     const humRaw = cleanNum(hourly.relative_humidity_2m, idx, null, true);
     const windRaw = cleanNum(hourly.wind_speed_10m, idx, null, true);
@@ -270,11 +295,14 @@ function parseOpenMeteoResponse(
     const smMid = Number((cleanNum(hourly.soil_moisture_1_to_3cm, idx, 0.26) ?? 0.26).toFixed(3));
     const smDeep = Number((cleanNum(hourly.soil_moisture_3_to_9cm, idx, 0.28) ?? 0.28).toFixed(3));
 
-    if (h < 24) f24 += precip;
+    if (h < 24) {
+      f24 += precip;
+      if (precip > peakHourly24h) peakHourly24h = precip;
+    }
     if (h < 48) f48 += precip;
     if (h < 72) f72 += precip;
     f120 += precip;
-    if (h < 72 && precip > peakHourly) peakHourly = precip;
+    if (h < 72 && precip > peakHourly72h) peakHourly72h = precip;
     if (h < 72 && prob > maxProb) maxProb = prob;
 
     const label = dt.toLocaleString('en-GB', {
@@ -302,10 +330,14 @@ function parseOpenMeteoResponse(
     });
   }
 
+  if (validFuturePrecipCount === 0) {
+    throw new Error('Open-Meteo future precipitation series contains no valid values');
+  }
+
   // Build 30-Day Outlook combining 16-Day Open-Meteo Daily + Days 17..30 Ensemble
   const ensembleMap = parseEnsembleDays(ensemble);
   const outlook30d: OutlookDayPoint[] = [];
-  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+  const todayIso = new Date(nowMs).toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
 
   // Index daily 16-day forecast starting from today
   const dailyMap = new Map<
@@ -326,7 +358,7 @@ function parseOpenMeteoResponse(
       if (dIso < todayIso) continue;
       dailyMap.set(dIso, {
         rain: Number((cleanNum(daily.precipitation_sum, i, 0) ?? 0).toFixed(1)),
-        prob: Math.round(cleanNum(daily.precipitation_probability_max, i, 10) ?? 10),
+        prob: Math.round(cleanNum(daily.precipitation_probability_max, i, 0) ?? 0),
         tMax: cleanNum(daily.temperature_2m_max, i, null, false),
         tMin: cleanNum(daily.temperature_2m_min, i, null, false),
         code: cleanNum(daily.weather_code, i, null, true),
@@ -334,16 +366,23 @@ function parseOpenMeteoResponse(
     }
   }
 
-  const baseDate = new Date();
+  const baseDate = new Date(nowMs);
   let hasEnsembleTail = false;
+  const maxEnsDays = ensembleMap.size > 0 ? Math.min(35, 16 + ensembleMap.size) : 16;
+  const totalOutlookDays = ensembleMap.size > 0 ? Math.max(30, maxEnsDays) : 16;
 
-  for (let d = 0; d < 30; d++) {
+  for (let d = 0; d < totalOutlookDays; d++) {
     const dt = new Date(baseDate.getTime() + d * 86400_000);
     const dateIso = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
     const dateLabel = dt.toLocaleDateString('en-GB', {
       timeZone: 'Asia/Karachi',
       day: '2-digit',
       month: 'short',
+    });
+    const monthYearLabel = dt.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Karachi',
+      month: 'short',
+      year: 'numeric',
     });
 
     const d16 = dailyMap.get(dateIso);
@@ -353,14 +392,20 @@ function parseOpenMeteoResponse(
     const tier: OutlookDayPoint['tier'] =
       d < 5 ? 'HIGH_PRECISION_5D' : d < 16 && d16 ? 'MEDIUM_RANGE_16D' : 'ENSEMBLE_30D';
 
+    let isAvailable = false;
+    let confidenceTier: OutlookDayPoint['confidenceTier'] = 'UNAVAILABLE';
+    let confidenceLabel = 'Unavailable';
     let rainfallMm = 0;
     let p90RainfallMm = 0;
-    let probabilityPct = 10;
+    let probabilityPct = 0;
     let minTempC: number | null = null;
     let maxTempC: number | null = null;
     let weatherCode: number | null = null;
 
     if (d16 && d < 16) {
+      isAvailable = true;
+      confidenceTier = d < 5 ? 'HIGHER' : 'LOWER';
+      confidenceLabel = 'Confidence unavailable';
       rainfallMm = d16.rain;
       p90RainfallMm = ens ? Math.max(d16.rain, ens.p90Mm) : Number((d16.rain * 1.25).toFixed(1));
       probabilityPct = d16.prob;
@@ -368,29 +413,38 @@ function parseOpenMeteoResponse(
       maxTempC = d16.tMax !== null ? Number(d16.tMax.toFixed(1)) : null;
       weatherCode = d16.code !== null ? Math.round(d16.code) : null;
     } else if (ens) {
+      isAvailable = true;
+      confidenceTier = 'EXPERIMENTAL';
+      confidenceLabel = 'Experimental long-range (confidence unavailable)';
       rainfallMm = ens.meanMm;
       p90RainfallMm = ens.p90Mm;
-      probabilityPct = Math.max(10, ens.exceedProbPct);
+      probabilityPct = Math.max(0, ens.exceedProbPct);
       weatherCode = rainfallMm > 15 ? 63 : rainfallMm > 3 ? 61 : 2;
     } else {
-      // Dry/seasonal climatology when beyond 16d and ensemble endpoint unavailable
+      isAvailable = false;
+      confidenceTier = 'UNAVAILABLE';
+      confidenceLabel = 'Unavailable';
       rainfallMm = 0;
       p90RainfallMm = 0;
-      probabilityPct = 5;
-      weatherCode = 1;
+      probabilityPct = 0;
+      weatherCode = null;
     }
 
     outlook30d.push({
       dayOffset: d + 1,
       dateIso,
       dateLabel,
+      monthYearLabel,
+      isAvailable,
+      confidenceTier,
+      confidenceLabel,
       rainfallMm,
       p90RainfallMm,
       probabilityPct,
       minTempC,
       maxTempC,
       weatherCode,
-      conditionLabel: describeWmoWeatherCode(weatherCode),
+      conditionLabel: isAvailable ? describeWmoWeatherCode(weatherCode) : 'Data unavailable',
       tier,
       riskLevel: classifyDailyRainRisk(rainfallMm),
     });
@@ -418,16 +472,27 @@ function parseOpenMeteoResponse(
   const curTemp = cleanNum(hourly.temperature_2m, currentIdx, null, false);
   const curHum = cleanNum(hourly.relative_humidity_2m, currentIdx, null, true);
   const curWind = cleanNum(hourly.wind_speed_10m, currentIdx, null, true);
-  const curPrecip = cleanNum(hourly.precipitation, currentIdx, 0);
+  const curPrecipRaw = hourly.precipitation[currentIdx];
+  const curPrecip =
+    typeof curPrecipRaw === 'number' && Number.isFinite(curPrecipRaw) && curPrecipRaw >= 0
+      ? curPrecipRaw
+      : null;
   const curCode = cleanNum(hourly.weather_code, currentIdx, null, true);
   const curCodeInt = curCode !== null ? Math.round(curCode) : null;
 
-  const now = new Date();
+  const coveragePct = Number(((validFuturePrecipCount / Math.max(1, limit)) * 100).toFixed(1));
+  const forecastState: WeatherBundle['forecastState'] =
+    missingFuturePrecipCount === 0 && limit >= 24 ? 'verified' : 'stale';
+
+  const now = new Date(nowMs);
   return {
     source: 'OPEN_METEO_LIVE',
+    forecastState,
     outlookSource: hasEnsembleTail ? 'OPEN_METEO_16D_ENSEMBLE' : 'OPEN_METEO_16D_ONLY',
-    isStale: false,
+    isStale: missingFuturePrecipCount > 0 || limit < 24,
     cacheAgeHours: 0,
+    coveragePct,
+    missingHoursCount: missingFuturePrecipCount,
     fetchedAtIso: now.toISOString(),
     fetchedAtPkt: formatPktTime(now),
     lat: raw.latitude ?? PILOT_CONFIG.weather.lat,
@@ -441,7 +506,8 @@ function parseOpenMeteoResponse(
     forecast120hMm: Number(f120.toFixed(1)),
     forecast16dMm,
     forecast30dMm,
-    peakHourlyMm: Number(peakHourly.toFixed(1)),
+    peakHourly24hMm: Number(peakHourly24h.toFixed(1)),
+    peakHourlyMm: Number(peakHourly72h.toFixed(1)),
     maxProbabilityPct: maxProb,
     currentWeather: {
       temperatureC: curTemp !== null ? Number(curTemp.toFixed(1)) : null,
@@ -457,7 +523,8 @@ function parseOpenMeteoResponse(
     outlook30d,
     earliestFloodAlert: computeEarliestFloodAlert(outlook30d),
     past7DaysDaily,
-    validationStatus: interpolatedCount > 0 ? 'INTERPOLATED_GAPS' : 'VALIDATED',
+    validationStatus:
+      interpolatedCount > 0 || missingFuturePrecipCount > 0 ? 'INTERPOLATED_GAPS' : 'VALIDATED',
   };
 }
 
@@ -505,10 +572,19 @@ function buildOutlookFallback(
       d < 5 ? 'HIGH_PRECISION_5D' : d < 16 ? 'MEDIUM_RANGE_16D' : 'ENSEMBLE_30D';
     const wCode = rain > 40 ? 65 : rain > 15 ? 61 : rain > 3 ? 51 : 2;
 
+    const monthYearLabel = dt.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Karachi',
+      month: 'short',
+      year: 'numeric',
+    });
     out.push({
       dayOffset: d + 1,
       dateIso,
       dateLabel,
+      monthYearLabel,
+      isAvailable: monsoonStressMode,
+      confidenceTier: monsoonStressMode ? 'EXPERIMENTAL' : 'UNAVAILABLE',
+      confidenceLabel: monsoonStressMode ? 'Simulated stress test' : 'Unavailable',
       rainfallMm: rain,
       p90RainfallMm: p90,
       probabilityPct: prob,
@@ -550,6 +626,7 @@ export function createDeterministicFallbackWeather(
   let f48 = 0;
   let f72 = 0;
   let f120 = 0;
+  let peakHourly24h = 0;
   let peakHourly = 0;
   let maxProb = 0;
 
@@ -574,7 +651,10 @@ export function createDeterministicFallbackWeather(
     const smMid = Number((0.28 + Math.min(0.12, precip * 0.006)).toFixed(3));
     const smDeep = monsoonStressMode ? 0.365 : 0.305;
 
-    if (h < 24) f24 += precip;
+    if (h < 24) {
+      f24 += precip;
+      if (precip > peakHourly24h) peakHourly24h = precip;
+    }
     if (h < 48) f48 += precip;
     if (h < 72) f72 += precip;
     f120 += precip;
@@ -609,9 +689,12 @@ export function createDeterministicFallbackWeather(
   const first = hourlyForecast[0];
   return {
     source: 'SYNTHETIC_DEMO',
+    forecastState: monsoonStressMode ? 'simulated' : 'unavailable',
     outlookSource: monsoonStressMode ? 'MONSOON_STRESS_TEST' : 'FALLBACK_DATA',
     isStale: !monsoonStressMode,
     cacheAgeHours: 0,
+    coveragePct: monsoonStressMode ? 100 : 0,
+    missingHoursCount: 0,
     fetchedAtIso: now.toISOString(),
     fetchedAtPkt: formatPktTime(now),
     lat: PILOT_CONFIG.weather.lat,
@@ -625,6 +708,7 @@ export function createDeterministicFallbackWeather(
     forecast120hMm: Number(f120.toFixed(1)),
     forecast16dMm: Number(outlook30d.slice(0, 16).reduce((s, d) => s + d.rainfallMm, 0).toFixed(1)),
     forecast30dMm: Number(outlook30d.reduce((s, d) => s + d.rainfallMm, 0).toFixed(1)),
+    peakHourly24hMm: Number(peakHourly24h.toFixed(1)),
     peakHourlyMm: Number(peakHourly.toFixed(1)),
     maxProbabilityPct: maxProb,
     currentWeather: {
@@ -750,6 +834,7 @@ export function create2001CloudburstWeather(dayOffset = 7, hourOfDay = 9): Weath
   let f48 = 0;
   let f72 = 0;
   let f120 = 0;
+  let peakHourly24h = 0;
   let peakHourly = 0;
   let maxProb = 0;
 
@@ -766,7 +851,10 @@ export function create2001CloudburstWeather(dayOffset = 7, hourOfDay = 9): Weath
     const wind = precip >= 30 ? Number((26 + precip * 0.16).toFixed(1)) : Number((9.5 + precip * 0.6).toFixed(1));
     const weatherCode = precip >= 30 ? 95 : precip >= 4 ? 65 : precip >= 0.5 ? 61 : 1;
 
-    if (h < 24) f24 += precip;
+    if (h < 24) {
+      f24 += precip;
+      if (precip > peakHourly24h) peakHourly24h = precip;
+    }
     if (h < 48) f48 += precip;
     if (h < 72) f72 += precip;
     f120 += precip;
@@ -814,6 +902,11 @@ export function create2001CloudburstWeather(dayOffset = 7, hourOfDay = 9): Weath
     rain = Number(rain.toFixed(1));
     const p90 = Number((rain * 1.15).toFixed(1));
     const wCode = rain >= 100 ? 95 : rain >= 15 ? 61 : rain > 1 ? 51 : 1;
+    const monthYearLabel = dt.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Karachi',
+      month: 'short',
+      year: 'numeric',
+    });
     return {
       dayOffset: d + 1,
       dateIso: dt.toISOString().slice(0, 10),
@@ -822,6 +915,10 @@ export function create2001CloudburstWeather(dayOffset = 7, hourOfDay = 9): Weath
         day: '2-digit',
         month: 'short',
       }),
+      monthYearLabel,
+      isAvailable: true,
+      confidenceTier: 'EXPERIMENTAL',
+      confidenceLabel: 'Historical archive',
       rainfallMm: rain,
       p90RainfallMm: p90,
       probabilityPct: rain >= 100 ? 100 : rain >= 15 ? 78 : rain > 1 ? 45 : 15,
@@ -847,9 +944,12 @@ export function create2001CloudburstWeather(dayOffset = 7, hourOfDay = 9): Weath
 
   return {
     source: 'SYNTHETIC_DEMO',
+    forecastState: 'simulated',
     outlookSource: 'HISTORICAL_2001_CLOUDBURST',
     isStale: false,
     cacheAgeHours: 0,
+    coveragePct: 100,
+    missingHoursCount: 0,
     fetchedAtIso: selectedDateObj.toISOString(),
     fetchedAtPkt: `${pktFormatted} PKT`,
     lat: PILOT_CONFIG.weather.lat,
@@ -863,6 +963,7 @@ export function create2001CloudburstWeather(dayOffset = 7, hourOfDay = 9): Weath
     forecast120hMm: Number(f120.toFixed(1)),
     forecast16dMm: Number(outlook30d.slice(0, 16).reduce((s, d) => s + d.rainfallMm, 0).toFixed(1)),
     forecast30dMm: Number(outlook30d.reduce((s, d) => s + d.rainfallMm, 0).toFixed(1)),
+    peakHourly24hMm: Number(peakHourly24h.toFixed(1)),
     peakHourlyMm: Number(peakHourly.toFixed(1)),
     maxProbabilityPct: maxProb,
     currentWeather: {
@@ -892,15 +993,42 @@ export function create2001CloudburstWeather(dayOffset = 7, hourOfDay = 9): Weath
 
 let inflightWeatherPromise: Promise<WeatherBundle> | null = null;
 
-export async function fetchNullahLaiWeather(forceRefresh = false): Promise<WeatherBundle> {
+function isCachedWeatherUsable(parsed: WeatherBundle, maxAgeHours: number, nowMs = Date.now()): boolean {
+  if (!parsed || typeof parsed.fetchedAtIso !== 'string' || !Array.isArray(parsed.hourlyForecast)) {
+    return false;
+  }
+  const ageHours = (nowMs - new Date(parsed.fetchedAtIso).getTime()) / 3600_000;
+  if (!Number.isFinite(ageHours) || ageHours < 0 || ageHours > maxAgeHours) {
+    return false;
+  }
+  const lastHour = parsed.hourlyForecast[parsed.hourlyForecast.length - 1];
+  if (!lastHour || new Date(lastHour.timestampIso).getTime() <= nowMs) {
+    return false;
+  }
+  return Array.isArray(parsed.outlook30d) && parsed.outlook30d.length >= 16;
+}
+
+export async function fetchNullahLaiWeather(
+  forceRefresh = false,
+  signal?: AbortSignal
+): Promise<WeatherBundle> {
   if (!forceRefresh) {
     try {
       const rawCache = localStorage.getItem(CACHE_KEY);
       if (rawCache) {
         const parsed = JSON.parse(rawCache) as WeatherBundle;
         const ageHours = (Date.now() - new Date(parsed.fetchedAtIso).getTime()) / 3600_000;
-        if (ageHours < 0.5 && parsed.source === 'OPEN_METEO_LIVE' && parsed.outlook30d?.length === 30) {
-          return parsed;
+        if (ageHours < 0.5 && parsed.source === 'OPEN_METEO_LIVE' && isCachedWeatherUsable(parsed, MAX_USABLE_CACHE_AGE_HOURS)) {
+          return {
+            ...parsed,
+            forecastState: parsed.forecastState ?? 'verified',
+            peakHourly24hMm: parsed.peakHourly24hMm ?? parsed.peakHourlyMm,
+            coveragePct: parsed.coveragePct ?? 100,
+            missingHoursCount: parsed.missingHoursCount ?? 0,
+          };
+        }
+        if (!isCachedWeatherUsable(parsed, MAX_USABLE_CACHE_AGE_HOURS)) {
+          localStorage.removeItem(CACHE_KEY);
         }
       }
     } catch {
@@ -936,16 +1064,27 @@ export async function fetchNullahLaiWeather(forceRefresh = false): Promise<Weath
 
     try {
       const controller = new AbortController();
+      const onExtAbort = () => controller.abort();
+      if (signal) {
+        if (signal.aborted) controller.abort();
+        else signal.addEventListener('abort', onExtAbort, { once: true });
+      }
       const timer = setTimeout(() => controller.abort(), 7000);
 
-      const [forecastRes, ensembleRes] = await Promise.all([
-        fetch(`${OPEN_METEO_BASE}?${forecastParams.toString()}`, { signal: controller.signal }),
-        fetch(`${OPEN_METEO_ENSEMBLE_URL}?${ensembleParams.toString()}`, {
-          signal: controller.signal,
-        }).catch(() => null),
-      ]);
+      let forecastRes: Response;
+      let ensembleRes: Response | null;
+      try {
+        [forecastRes, ensembleRes] = await Promise.all([
+          fetch(`${OPEN_METEO_BASE}?${forecastParams.toString()}`, { signal: controller.signal }),
+          fetch(`${OPEN_METEO_ENSEMBLE_URL}?${ensembleParams.toString()}`, {
+            signal: controller.signal,
+          }).catch(() => null),
+        ]);
+      } finally {
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onExtAbort);
+      }
 
-      clearTimeout(timer);
       if (!forecastRes.ok) throw new Error(`Open-Meteo HTTP ${forecastRes.status}`);
 
       const raw = (await forecastRes.json()) as OpenMeteoRawResponse;
@@ -961,20 +1100,31 @@ export async function fetchNullahLaiWeather(forceRefresh = false): Promise<Weath
         // ignore storage quota
       }
       return bundle;
-    } catch {
+    } catch (err) {
+      if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+        throw err;
+      }
       try {
         const rawCache = localStorage.getItem(CACHE_KEY);
         if (rawCache) {
           const cached = JSON.parse(rawCache) as WeatherBundle;
-          const ageHours = Number(
-            ((Date.now() - new Date(cached.fetchedAtIso).getTime()) / 3600_000).toFixed(1)
-          );
-          return {
-            ...cached,
-            source: 'LOCAL_CACHE_FALLBACK',
-            isStale: true,
-            cacheAgeHours: ageHours,
-          };
+          if (isCachedWeatherUsable(cached, MAX_USABLE_CACHE_AGE_HOURS)) {
+            const ageHours = Number(
+              ((Date.now() - new Date(cached.fetchedAtIso).getTime()) / 3600_000).toFixed(1)
+            );
+            return {
+              ...cached,
+              source: 'LOCAL_CACHE_FALLBACK',
+              forecastState: 'stale',
+              isStale: true,
+              cacheAgeHours: ageHours,
+              peakHourly24hMm: cached.peakHourly24hMm ?? cached.peakHourlyMm,
+              coveragePct: cached.coveragePct ?? 100,
+              missingHoursCount: cached.missingHoursCount ?? 0,
+            };
+          }
+          // Purge expired cache so stale past weather never silently drives operational scenarios
+          localStorage.removeItem(CACHE_KEY);
         }
       } catch {
         // ignore

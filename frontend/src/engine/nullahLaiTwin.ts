@@ -448,12 +448,38 @@ export async function loadRealClippedTwin(): Promise<TwinGrid> {
       throw new Error(`HTTP ${res.status} loading real_twin_200x200.json`);
     }
     const raw: RealTwinJsonPayload = await res.json();
+    if (
+      !raw ||
+      !Number.isInteger(raw.rows) ||
+      !Number.isInteger(raw.cols) ||
+      raw.rows <= 0 ||
+      raw.cols <= 0
+    ) {
+      throw new Error('Malformed real_twin_200x200.json dimensions');
+    }
     const { rows, cols } = raw;
     const total = rows * cols;
+    const requiredArrays = [
+      raw.dem,
+      raw.f_imp,
+      raw.land_cover,
+      raw.population,
+      raw.buildings,
+      raw.roads,
+      raw.zones,
+    ];
+    if (requiredArrays.some((arr) => !Array.isArray(arr) || arr.length !== total)) {
+      throw new Error('real_twin_200x200.json raster length mismatch');
+    }
     const bbox = PILOT_CONFIG.studyAreas.nullah_lai_basin.bbox_wgs84;
 
     const dem = Float64Array.from(raw.dem);
     const f_imp = Float64Array.from(raw.f_imp);
+    for (let i = 0; i < total; i++) {
+      if (!Number.isFinite(dem[i]) || !Number.isFinite(f_imp[i])) {
+        throw new Error(`Non-finite terrain value at cell ${i} in real_twin_200x200.json`);
+      }
+    }
     const land_cover = Int32Array.from(raw.land_cover);
     const population = Float64Array.from(raw.population);
     const buildings = Int32Array.from(raw.buildings);

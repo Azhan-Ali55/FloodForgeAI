@@ -76,7 +76,18 @@ const HISTORICAL_EVENTS: HistoricalEventSpec[] = [
 ];
 
 const HINDCAST_BUDGETS = [50_000_000, 150_000_000, 200_000_000, 300_000_000];
+const MAX_HINDCAST_CACHE_ENTRIES = 12;
 const hindcastCache = new Map<string, OptimizationResult>();
+
+function setBoundedHindcastCache(key: string, val: OptimizationResult) {
+  if (hindcastCache.has(key)) hindcastCache.delete(key);
+  hindcastCache.set(key, val);
+  while (hindcastCache.size > MAX_HINDCAST_CACHE_ENTRIES) {
+    const oldest = hindcastCache.keys().next().value;
+    if (oldest !== undefined) hindcastCache.delete(oldest);
+    else break;
+  }
+}
 
 /**
  * Counterfactual replay of past Nullah Lai flood events comparing unmitigated exposure vs. optimized interventions.
@@ -107,9 +118,14 @@ export function HistoricalHindcastPanel() {
 
   useEffect(() => {
     const thresholdMm = activeHistoricalEvent.id === '2001_cloudburst' ? 150 : 50;
-    const cacheKey = `${twin.studyAreaId}:${twin.rows}:${engineMode}:${hindcastEventId}:${hindcastBudget}:${thresholdMm}`;
+    const w = optConfig.weights;
+    const weightsKey = `${w.population},${w.buildings},${w.roads},${w.facilities},${w.area}`;
+    const urlKey = engineMode === 'api' ? apiUrl.trim() : '';
+    const cacheKey = `${twin.studyAreaId}:${twin.rows}:${twin.seed}:${engineMode}:${urlKey}:${hindcastEventId}:${hindcastBudget}:${thresholdMm}:${weightsKey}`;
     const cached = hindcastCache.get(cacheKey);
     if (cached) {
+      hindcastCache.delete(cacheKey);
+      hindcastCache.set(cacheKey, cached);
       setHindcastResult(cached);
       setIsRunningHindcast(false);
       return;
@@ -143,7 +159,7 @@ export function HistoricalHindcastPanel() {
       )
         .then(({ result }) => {
           if (!active) return;
-          hindcastCache.set(cacheKey, result);
+          setBoundedHindcastCache(cacheKey, result);
           setHindcastResult(result);
           setIsRunningHindcast(false);
         })

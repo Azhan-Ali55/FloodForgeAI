@@ -106,7 +106,8 @@ export async function apiRequest<T>(
 }
 
 export async function pingBackendHealth(
-  baseUrl: string
+  baseUrl: string,
+  signal?: AbortSignal
 ): Promise<{ ok: boolean; latencyMs: number; version?: string; error?: string }> {
   if (!baseUrl.trim()) {
     return {
@@ -120,15 +121,25 @@ export async function pingBackendHealth(
     const data = await apiRequest<{ status: string; version?: string; ready?: boolean }>(
       baseUrl,
       '/api/health',
-      { method: 'GET' },
+      { method: 'GET', signal },
       3500
     );
+    if (!data || typeof data !== 'object' || typeof data.status !== 'string') {
+      return {
+        ok: false,
+        latencyMs: Math.round(performance.now() - t0),
+        error: 'Malformed /api/health payload',
+      };
+    }
     return {
       ok: (data.status === 'ok' || data.status === 'healthy') && data.ready !== false,
       latencyMs: Math.round(performance.now() - t0),
       version: data.version,
     };
   } catch (err) {
+    if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+      throw err;
+    }
     return {
       ok: false,
       latencyMs: Math.round(performance.now() - t0),

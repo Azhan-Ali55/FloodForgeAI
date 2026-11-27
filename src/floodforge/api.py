@@ -1,6 +1,7 @@
 """FastAPI server exposing the real 200x200 Nullah Lai TwinGrid and D8 Simulator."""
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 import json
@@ -203,27 +204,45 @@ def _validate_portfolio_bounds(interventions: list[InterventionIn], rows: int, c
             )
 
 
-def _find_current_pkt_hour_idx(times: list[str]) -> int:
+def _align_pkt_future_index(times: list[str], now_pkt: datetime | None = None) -> tuple[int, bool]:
+    """Return (start_idx_of_current_or_future_hour, is_expired).
+
+    Excludes elapsed hours strictly before the current PKT hour floor.
+    If all timestamps in ``times`` predate the current PKT hour floor, marks expired.
+    """
     if not times:
-        return 0
-    now_pkt = datetime.now(PKT_TZ)
-    target_prefix = now_pkt.strftime("%Y-%m-%dT%H:00")
+        return 0, True
+    ref_pkt = now_pkt or datetime.now(PKT_TZ)
+    current_hour_naive = ref_pkt.astimezone(PKT_TZ).replace(
+        minute=0, second=0, microsecond=0, tzinfo=None
+    )
+    target_prefix = current_hour_naive.strftime("%Y-%m-%dT%H:00")
     for idx, t in enumerate(times):
         if t.startswith(target_prefix):
-            return idx
-    now_naive_ts = now_pkt.replace(tzinfo=None)
-    best_idx = 0
-    best_diff = float("inf")
+            return idx, False
+
+    best_future_idx: int | None = None
+    best_future_diff = float("inf")
     for idx, t in enumerate(times):
         try:
             dt = datetime.fromisoformat(t)
-            diff = abs((dt - now_naive_ts).total_seconds())
-            if diff < best_diff:
-                best_diff = diff
-                best_idx = idx
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(PKT_TZ).replace(tzinfo=None)
         except ValueError:
             continue
-    return best_idx
+        diff = (dt - current_hour_naive).total_seconds()
+        if diff >= 0 and diff < best_future_diff:
+            best_future_diff = diff
+            best_future_idx = idx
+
+    if best_future_idx is not None:
+        return best_future_idx, False
+    return len(times), True
+
+
+def _find_current_pkt_hour_idx(times: list[str]) -> int:
+    idx, _ = _align_pkt_future_index(times)
+    return idx
 
 
 @app.get("/api/live")
@@ -287,7 +306,7 @@ def get_twin_payload():
 
 @app.get("/api/forecast")
 def get_open_meteo_forecast():
-    """Fetch 72h hourly Open-Meteo precipitation & time-aligned PKT soil moisture."""
+    """Fetch future PKT-aligned Open-Meteo precipitation & soil moisture (excluding elapsed hours)."""
     url = os.getenv(
         "FLOODFORGE_OPEN_METEO_URL",
         "https://api.open-meteo.com/v1/forecast"
@@ -301,37 +320,80 @@ def get_open_meteo_forecast():
                 raise HTTPException(status_code=503, detail="Open-Meteo returned HTTP error")
             payload = json.loads(resp.read().decode("utf-8"))
         hourly = payload.get("hourly") or {}
-        times: list[str] = list(hourly["time"][:72])
-        raw_precip = hourly["precipitation"][:72]
-        if not times or not raw_precip:
+        raw_times = hourly["time"]
+        raw_precip_all = hourly["precipitation"]
+        if not isinstance(raw_times, list) or not isinstance(raw_precip_all, list) or not raw_times or not raw_precip_all:
             raise ValueError("Open-Meteo payload missing hourly precipitation series")
-        precip: list[float] = [max(0.0, float(x or 0.0)) for x in raw_precip]
+        count = min(len(raw_times), len(raw_precip_all))
+        times: list[str] = [str(t) for t in raw_times[:count]]
+        precip_raw: list[float | None] = []
+        for x in raw_precip_all[:count]:
+            if x is None:
+                precip_raw.append(None)
+            else:
+                val = float(x)
+                if not math.isfinite(val) or val < 0:
+                    precip_raw.append(None)
+                else:
+                    precip_raw.append(round(val, 3))
     except HTTPException:
         raise
-    except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, KeyError, ValueError) as exc:
+    except (URLError, HTTPError, TimeoutError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
         logger.warning("weather_provider_unavailable detail=%s", exc)
         raise HTTPException(
             status_code=503,
             detail={
                 "source": "unavailable",
+                "forecast_status": "unavailable",
                 "error_category": "weather_provider_unavailable",
                 "message": "Open-Meteo weather forecast unavailable; no synthetic forecast substituted.",
             },
         ) from exc
 
+    cur_idx, is_expired = _align_pkt_future_index(times)
+    if is_expired or cur_idx >= len(times):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "source": "unavailable",
+                "forecast_status": "unavailable",
+                "error_category": "forecast_expired",
+                "message": "Weather forecast timestamps are completely elapsed/expired.",
+            },
+        )
+
+    future_times = times[cur_idx : cur_idx + 72]
+    future_precip_raw = precip_raw[cur_idx : cur_idx + 72]
+    valid_future_vals = [v for v in future_precip_raw if v is not None]
+    if not valid_future_vals:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "source": "unavailable",
+                "forecast_status": "unavailable",
+                "error_category": "weather_data_incomplete",
+                "message": "All future precipitation entries are missing; refusing to assume zero rainfall.",
+            },
+        )
+
+    missing_future_hours = sum(1 for v in future_precip_raw if v is None)
+    coverage_pct = round((len(valid_future_vals) / max(1, len(future_precip_raw))) * 100.0, 1)
+    forecast_status = (
+        "verified" if missing_future_hours == 0 and len(future_precip_raw) >= 24 else "partial"
+    )
+
     raw_soil = hourly.get("soil_moisture_0_to_1cm") or []
     soil_arr: list[float | None] = [
         round(float(x), 3) if x is not None and math.isfinite(float(x)) else None
-        for x in raw_soil[:72]
+        for x in raw_soil[:count]
     ]
+    future_soil = soil_arr[cur_idx : cur_idx + 72]
 
-    cur_idx = _find_current_pkt_hour_idx(times)
     soil_now: float | None = soil_arr[cur_idx] if cur_idx < len(soil_arr) else None
-    if soil_now is None and soil_arr:
-        for offset in (1, -1, 2, -2):
-            probe = cur_idx + offset
-            if 0 <= probe < len(soil_arr) and soil_arr[probe] is not None:
-                soil_now = soil_arr[probe]
+    if soil_now is None and future_soil:
+        for probe in range(min(3, len(future_soil))):
+            if future_soil[probe] is not None:
+                soil_now = future_soil[probe]
                 break
 
     if soil_now is None:
@@ -345,32 +407,46 @@ def get_open_meteo_forecast():
     else:
         wetness = "dry"
 
-    future_precip = precip[cur_idx:] if cur_idx < len(precip) else precip
-    total_72h = round(sum(precip), 1)
-    peak_1h = round(max(precip) if precip else 0.0, 1)
+    # Strict future-only calculations (elapsed hours precip[:cur_idx] excluded)
+    future_precip_numeric = [v if v is not None else 0.0 for v in future_precip_raw]
+    future_24h_total = round(sum(future_precip_numeric[:24]), 1)
+    future_48h_total = round(sum(future_precip_numeric[:48]), 1)
+    future_72h_total = round(sum(future_precip_numeric), 1)
+    peak_1h = round(max(valid_future_vals), 1)
 
     best_6h = 0.0
     best_start_idx = 0
-    for i in range(max(1, len(precip) - 5)):
-        win = sum(precip[i : i + 6])
-        if win > best_6h:
-            best_6h = win
-            best_start_idx = i
+    if len(future_precip_numeric) >= 6:
+        for i in range(len(future_precip_numeric) - 5):
+            win = sum(future_precip_numeric[i : i + 6])
+            if win > best_6h:
+                best_6h = win
+                best_start_idx = i
+    else:
+        best_6h = sum(future_precip_numeric)
+        best_start_idx = 0
 
     return {
         "source": "open-meteo-live",
+        "forecast_status": forecast_status,
         "provenance": "WEATHER_FORECAST",
-        "aligned_pkt_time": times[cur_idx] if cur_idx < len(times) else None,
-        "hourly_time": times,
-        "hourly_precipitation_mm": precip,
-        "hourly_soil_moisture_0_to_1cm": soil_arr,
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
+        "aligned_pkt_time": future_times[0] if future_times else None,
+        "coverage_pct": coverage_pct,
+        "missing_future_hours": missing_future_hours,
+        "hourly_time": future_times,
+        "hourly_precipitation_mm": future_precip_raw,
+        "hourly_soil_moisture_0_to_1cm": future_soil,
         "soil_moisture_0_to_1cm": soil_now,
         "antecedent_wetness": wetness,
         "peak_6h_total_mm": round(best_6h, 1),
         "peak_6h_rate_mm_per_hr": round(best_6h / 6.0, 2),
-        "peak_6h_window_start": times[best_start_idx] if times else None,
-        "total_72h_mm": total_72h,
-        "remaining_window_total_mm": round(sum(future_precip), 1),
+        "peak_6h_window_start": future_times[best_start_idx] if best_6h > 0.0 and future_times else None,
+        "future_24h_total_mm": future_24h_total,
+        "future_48h_total_mm": future_48h_total,
+        "future_72h_total_mm": future_72h_total,
+        "total_72h_mm": future_72h_total,
+        "remaining_window_total_mm": future_72h_total,
         "peak_1h_mm_per_hr": peak_1h,
     }
 
@@ -425,13 +501,14 @@ def simulate(req: SimulateRequest):
 
 
 _OPTIMIZE_CACHE_LOCK = threading.Lock()
-_OPTIMIZE_CACHE: dict[tuple, dict] = {}
+_OPTIMIZE_CACHE_MAX = 64
+_OPTIMIZE_CACHE: OrderedDict[tuple, dict] = OrderedDict()
 
 
 @app.post("/api/optimize")
 def optimize(req: OptimizeRequest):
     (twin, _), sim = _require_ready_twin()
-    enabled_key = tuple(sorted(req.enabled_types)) if req.enabled_types is not None else None
+    enabled_key = tuple(sorted(set(req.enabled_types))) if req.enabled_types is not None else None
     cache_key = (
         round(req.scenario.rainfall_mm_per_hr, 4),
         round(req.scenario.duration_hr, 4),
@@ -444,8 +521,9 @@ def optimize(req: OptimizeRequest):
     )
     with _OPTIMIZE_CACHE_LOCK:
         cached_payload = _OPTIMIZE_CACHE.get(cache_key)
-    if cached_payload is not None:
-        return cached_payload
+        if cached_payload is not None:
+            _OPTIMIZE_CACHE.move_to_end(cache_key)
+            return cached_payload
 
     scenario = Scenario(**req.scenario.model_dump())
     enabled_set = (
@@ -453,29 +531,18 @@ def optimize(req: OptimizeRequest):
         if req.enabled_types is not None
         else None
     )
-    target_budget = max(300_000_000.0, scenario.budget_pkr) if req.include_pareto else scenario.budget_pkr
-    full_port = sim.optimize_portfolio(
+
+    # Optimize independently for the exact requested primary budget so include_pareto never alters primary results
+    portfolio = sim.optimize_portfolio(
         twin,
-        Scenario(
-            rainfall_mm_per_hr=scenario.rainfall_mm_per_hr,
-            duration_hr=scenario.duration_hr,
-            budget_pkr=target_budget,
-            antecedent_wetness=scenario.antecedent_wetness,
-            uncertainty_factor=scenario.uncertainty_factor,
-        ),
+        scenario,
         threshold_mm=req.threshold_mm,
         enabled_types=enabled_set,
     )
-    selected_list: list[Intervention] = []
-    spent_budget = 0.0
-    for iv in full_port.interventions:
-        if spent_budget + iv.cost_pkr <= scenario.budget_pkr:
-            selected_list.append(iv)
-            spent_budget += iv.cost_pkr
-    portfolio = Portfolio(interventions=selected_list)
 
     payload: dict = {
         "engine": "python-d8-optimizer-v1",
+        "provenance": "SIMULATED",
         "interventions": [
             {
                 "id": i.id,
@@ -497,19 +564,29 @@ def optimize(req: OptimizeRequest):
         budgets = sorted({50_000_000.0, 150_000_000.0, 200_000_000.0, 300_000_000.0, scenario.budget_pkr})
         pareto_rows = []
         for b in budgets:
-            sub: list[Intervention] = []
-            spent = 0.0
-            for iv in full_port.interventions:
-                if spent + iv.cost_pkr <= b:
-                    sub.append(iv)
-                    spent += iv.cost_pkr
-            if base_area <= 0 or not sub:
+            if b == scenario.budget_pkr:
+                sub_port = portfolio
+            else:
+                sub_port = sim.optimize_portfolio(
+                    twin,
+                    Scenario(
+                        rainfall_mm_per_hr=scenario.rainfall_mm_per_hr,
+                        duration_hr=scenario.duration_hr,
+                        budget_pkr=b,
+                        antecedent_wetness=scenario.antecedent_wetness,
+                        uncertainty_factor=scenario.uncertainty_factor,
+                    ),
+                    threshold_mm=req.threshold_mm,
+                    enabled_types=enabled_set,
+                )
+            spent = sum(iv.cost_pkr for iv in sub_port.interventions)
+            if base_area <= 0 or not sub_port.interventions:
                 red_pct = 0.0
             else:
                 sub_res = sim.run_scenario(
                     twin,
                     scenario,
-                    Portfolio(interventions=sub),
+                    sub_port,
                     baseline_acc=base_res.accumulation_mm,
                     threshold_mm=req.threshold_mm,
                     include_uncertainty=False,
@@ -523,13 +600,14 @@ def optimize(req: OptimizeRequest):
                     "budget_pkr": b,
                     "cost_pkr": round(spent, 2),
                     "exposure_reduction_pct": red_pct,
-                    "selected_count": len(sub),
+                    "selected_count": len(sub_port.interventions),
                 }
             )
         payload["pareto_frontier"] = pareto_rows
 
     with _OPTIMIZE_CACHE_LOCK:
-        if len(_OPTIMIZE_CACHE) >= 64:
-            _OPTIMIZE_CACHE.clear()
         _OPTIMIZE_CACHE[cache_key] = payload
+        _OPTIMIZE_CACHE.move_to_end(cache_key)
+        while len(_OPTIMIZE_CACHE) > _OPTIMIZE_CACHE_MAX:
+            _OPTIMIZE_CACHE.popitem(last=False)
     return payload

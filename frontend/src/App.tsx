@@ -1,3 +1,4 @@
+import { Analytics } from '@vercel/analytics/react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { FloodForgeProvider } from './context/FloodForgeContext';
@@ -11,6 +12,10 @@ import { ModelHealth } from './pages/ModelHealth';
 import { NotFound } from './pages/NotFound';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
+
+const isLocalPreview =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost');
 
 export function App() {
   return (
@@ -30,6 +35,7 @@ export function App() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AppShell>
+        {!isLocalPreview && <Analytics />}
       </BrowserRouter>
     </FloodForgeProvider>
   );

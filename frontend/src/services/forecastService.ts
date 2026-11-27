@@ -8,17 +8,77 @@ import type {
 } from '../types/floodforge';
 import { apiRequest } from './apiClient';
 
+const VALID_WETNESS = new Set(['dry', 'normal', 'wet', 'saturated', 'unavailable']);
+
+export function validateBackendForecastResponse(raw: unknown): BackendForecastSummary {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Malformed /api/forecast response: expected JSON object');
+  }
+  const f = raw as Record<string, unknown>;
+  if (typeof f.source !== 'string' || f.source === 'unavailable') {
+    throw new Error('Backend forecast unavailable');
+  }
+  if (typeof f.antecedent_wetness !== 'string' || !VALID_WETNESS.has(f.antecedent_wetness)) {
+    throw new Error(`Invalid antecedent_wetness from /api/forecast: ${String(f.antecedent_wetness)}`);
+  }
+  for (const numField of ['peak_6h_total_mm', 'peak_6h_rate_mm_per_hr', 'total_72h_mm', 'peak_1h_mm_per_hr']) {
+    const v = f[numField];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+      throw new Error(`Invalid numeric field '${numField}' in /api/forecast response`);
+    }
+  }
+  if (f.soil_moisture_0_to_1cm !== null) {
+    if (typeof f.soil_moisture_0_to_1cm !== 'number' || !Number.isFinite(f.soil_moisture_0_to_1cm)) {
+      throw new Error('Invalid soil_moisture_0_to_1cm in /api/forecast response');
+    }
+  }
+  if (f.hourly_precipitation_mm !== undefined) {
+    if (!Array.isArray(f.hourly_precipitation_mm)) {
+      throw new Error('Invalid hourly_precipitation_mm in /api/forecast response');
+    }
+    const hasValidHour = f.hourly_precipitation_mm.some(
+      (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0
+    );
+    if (!hasValidHour && f.hourly_precipitation_mm.length > 0) {
+      throw new Error('Backend forecast hourly series has no valid precipitation entries');
+    }
+  }
+  return raw as BackendForecastSummary;
+}
+
 export async function fetchBackendForecast(
-  apiUrl: string
+  apiUrl: string,
+  signal?: AbortSignal
 ): Promise<BackendForecastSummary> {
-  return apiRequest<BackendForecastSummary>(apiUrl, '/api/forecast', { method: 'GET' }, 7000);
+  const data = await apiRequest<unknown>(apiUrl, '/api/forecast', { method: 'GET', signal }, 7000);
+  return validateBackendForecastResponse(data);
 }
 
 export function buildScenarioFromBackendForecast(
   forecast: BackendForecastSummary,
-  budgetPkr: number
+  budgetPkr: number,
+  horizon: ForecastHorizon = 24
 ): Scenario {
-  const peak6hMm = Math.max(0, forecast.peak_6h_total_mm);
+  let peak6hMm = Math.max(0, forecast.peak_6h_total_mm);
+  if (Array.isArray(forecast.hourly_precipitation_mm) && forecast.hourly_precipitation_mm.length > 0) {
+    const sliced = forecast.hourly_precipitation_mm
+      .slice(0, horizon)
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0);
+    if (sliced.length > 0) {
+      let best = 0;
+      if (sliced.length >= 6) {
+        for (let i = 0; i <= sliced.length - 6; i++) {
+          let win = 0;
+          for (let j = 0; j < 6; j++) win += sliced[i + j];
+          if (win > best) best = win;
+        }
+      } else {
+        best = sliced.reduce((a, b) => a + b, 0);
+      }
+      peak6hMm = best;
+    }
+  }
+
   const isDry = peak6hMm < 0.2;
   const rate = isDry ? 0 : Number((peak6hMm / 6).toFixed(2));
   const smLabel =
@@ -35,7 +95,7 @@ export function buildScenarioFromBackendForecast(
       forecast.antecedent_wetness === 'unavailable' ? 'normal' : forecast.antecedent_wetness,
     uncertainty_factor: 1.0,
     tag: 'LIVE_FORECAST',
-    label: `Live Forecast (${smLabel})`,
+    label: `Live Backend ${horizon}h Forecast (${smLabel})`,
   };
 }
 

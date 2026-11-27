@@ -29,17 +29,23 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
       await expect(page.getByRole('link', { name: label })).toBeVisible();
     }
 
-    // Three-column desktop panels visible
-    await expect(page.getByRole('heading', { name: 'Weather Forecast' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Environmental Conditions' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Water Monitoring' })).toBeVisible();
+    // Rebalanced dashboard hierarchy & single header mode switcher
+    await expect(
+      page.getByRole('group', { name: 'Operational mode switch' })
+    ).toBeVisible();
+    await expect(page.locator('main').getByRole('button', { name: /2001 Cloudburst Demo/i })).toHaveCount(0);
     await expect(
       page.getByRole('heading', { name: 'Nullah Lai Basin — Environmental & Flood Risk Map' })
     ).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Current Flood Risk' })).toBeVisible();
-    await expect(page.getByText('24h Peak')).toBeVisible();
-    await expect(page.getByText('Rain Prob.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Active Flood & Station Alerts' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Mitigation Simulation & Investment Effectiveness' })
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Calendar Flood Outlook/i })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Supporting Weather & Environmental Inputs' })
+    ).toBeVisible();
 
     // Navigate through routes and test back/forward
     await page.getByRole('link', { name: 'Live Monitoring' }).click();
@@ -120,11 +126,13 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
     await popup.getByRole('button', { name: 'Close station popup' }).click();
     await expect(popup).toBeHidden();
 
-    // Toggle 5-Day and 3-Day forecast options
+    // Expand detailed weather breakdown, toggle 5-Day / 3-Day, and collapse again
+    await page.getByRole('button', { name: 'Expand Weather Details' }).click();
     await page.getByRole('button', { name: '5-Day' }).click();
     await expect(page.getByText('5d horizon')).toBeVisible();
     await page.getByRole('button', { name: '3-Day' }).click();
     await expect(page.getByText('3d horizon')).toBeVisible();
+    await page.getByRole('button', { name: 'Hide Detailed Weather Charts' }).click();
 
     // Open Map Layers dropdown & toggle layers
     await page.getByRole('button', { name: 'Map Layers' }).click();
@@ -263,19 +271,20 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
     await page.goto('/');
 
     await expect(
-      page.getByRole('heading', { name: '30-Day Advance Flood Watch & Future Outlook' })
+      page.getByRole('heading', { name: /Calendar Flood Outlook/i })
     ).toBeVisible();
     await expect(
       page.getByRole('heading', { name: 'Most Affected Areas vs. Safe Zones' })
     ).toBeVisible();
+    await expect(page.getByText(/Confidence unavailable/i)).toBeVisible();
 
     // Live Ops keeps synthetic surge testing isolated out of live telemetry
     await expect(
       page.getByRole('button', { name: 'Simulate 30-Day Monsoon Surge' })
     ).toBeHidden();
 
-    // Switch to 2001 Demo profile, then trigger 30-Day Monsoon Surge Test
-    await page.getByRole('button', { name: /2001 Cloudburst Demo/i }).click();
+    // Switch to 2001 Demo profile via single header control, then trigger 30-Day Monsoon Surge Test
+    await page.getByRole('button', { name: /2001 Cloudburst Demo \(150mm\)/i }).click();
     await page.getByRole('button', { name: 'Simulate 30-Day Monsoon Surge' }).click();
     await expect(page.getByText(/Advance Flood Watch:/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Viewing Day \+/i })).toBeVisible();
@@ -300,15 +309,15 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
     await page.goto('/');
 
     await expect(
-      page.getByRole('heading', { name: 'Mitigation ROI & Operational Mode Control' })
+      page.getByRole('heading', { name: 'Mitigation Simulation & Investment Effectiveness' })
     ).toBeVisible();
     await expect(
       page.getByText('Moderate rainfall: 12% area reduction. Severe cloudburst: 39% area reduction.')
     ).toBeVisible();
     await expect(page.getByText('50 mm Flood Cutoff')).toBeVisible();
 
-    // Switch to 2001 Cloudburst Demo (620mm/10hr, threshold_mm=150) at default PKR 200M
-    await page.getByRole('button', { name: /2001 Cloudburst Demo/i }).click();
+    // Switch to 2001 Cloudburst Demo via single header control (620mm/10hr, threshold_mm=150) at default PKR 200M
+    await page.getByRole('button', { name: /2001 Cloudburst Demo \(150mm\)/i }).click();
     await expect(page.getByText('150 mm Severe Cutoff')).toBeVisible();
     await expect(page.getByText('2001 Cloudburst Archive')).toBeVisible();
     await expect(page.getByText('23 Jul 2001 09:00 PKT').first()).toBeVisible();
@@ -365,6 +374,14 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
   });
 
   test('zero flood risk day proposes zero mitigation sites', async ({ page }) => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const hourlyTimes = Array.from({ length: 19 * 24 }, (_, i) => nowSec - 3 * 86400 + i * 3600);
+    const hourlyZeros = hourlyTimes.map(() => 0);
+    const dailyTimes = Array.from({ length: 19 }, (_, i) => nowSec - 3 * 86400 + i * 86400);
+    const dailyZeros = dailyTimes.map(() => 0);
+    const ensembleDailyTimes = Array.from({ length: 35 }, (_, i) => nowSec + i * 86400);
+    const ensembleDailyZeros = ensembleDailyTimes.map(() => 0);
+
     await page.route('**/api/forecast', async (route) => {
       await route.fulfill({
         status: 200,
@@ -382,6 +399,52 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
       });
     });
 
+    await page.route('https://api.open-meteo.com/v1/forecast**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          latitude: 33.64,
+          longitude: 73.06,
+          timezone: 'Asia/Karachi',
+          hourly: {
+            time: hourlyTimes,
+            precipitation: hourlyZeros,
+            precipitation_probability: hourlyZeros,
+            temperature_2m: hourlyTimes.map(() => 28),
+            relative_humidity_2m: hourlyTimes.map(() => 35),
+            wind_speed_10m: hourlyTimes.map(() => 6),
+            weather_code: hourlyZeros,
+            soil_moisture_0_to_1cm: hourlyTimes.map(() => 0.16),
+            soil_moisture_1_to_3cm: hourlyTimes.map(() => 0.17),
+            soil_moisture_3_to_9cm: hourlyTimes.map(() => 0.18),
+          },
+          daily: {
+            time: dailyTimes,
+            precipitation_sum: dailyZeros,
+            precipitation_probability_max: dailyZeros,
+            temperature_2m_max: dailyTimes.map(() => 34),
+            temperature_2m_min: dailyTimes.map(() => 21),
+            weather_code: dailyZeros,
+          },
+        }),
+      });
+    });
+
+    await page.route('https://ensemble-api.open-meteo.com/v1/ensemble**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          daily: {
+            time: ensembleDailyTimes,
+            precipitation_sum_member01: ensembleDailyZeros,
+            precipitation_sum_member02: ensembleDailyZeros,
+          },
+        }),
+      });
+    });
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
 
@@ -390,5 +453,95 @@ test.describe('FloodForgeAI Municipal Monitoring Portal E2E QA', () => {
     await expect(
       page.getByText('No Flood Risk Modeled: Mitigation solutions are not required under current conditions.')
     ).toBeVisible();
+  });
+
+  test('satellite tile {z}/{y}/{x} order, incomplete ensemble disclosure, and engine/URL switching races', async ({
+    page,
+  }) => {
+    const satelliteUrls: string[] = [];
+    await page.route('https://server.arcgisonline.com/**', async (route) => {
+      satelliteUrls.push(route.request().url());
+      await route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('') });
+    });
+
+    // Incomplete ensemble (16d forecast ok, ensemble-api fails) must never display "30-Day Status Clear"
+    const nowSec = Math.floor(Date.now() / 1000);
+    const hourlyTimes = Array.from({ length: 19 * 24 }, (_, i) => nowSec - 3 * 86400 + i * 3600);
+    const dailyTimes = Array.from({ length: 19 }, (_, i) => nowSec - 3 * 86400 + i * 86400);
+    await page.route('https://api.open-meteo.com/v1/forecast**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          latitude: 33.64,
+          longitude: 73.06,
+          timezone: 'Asia/Karachi',
+          hourly: {
+            time: hourlyTimes,
+            precipitation: hourlyTimes.map(() => 0),
+            precipitation_probability: hourlyTimes.map(() => 5),
+          },
+          daily: {
+            time: dailyTimes,
+            precipitation_sum: dailyTimes.map(() => 0),
+            precipitation_probability_max: dailyTimes.map(() => 5),
+          },
+        }),
+      });
+    });
+    await page.route('https://ensemble-api.open-meteo.com/**', (route) => route.abort());
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+
+    // Safe Zones panel carries explicit screening-level disclaimer
+    await expect(page.getByText(/Screening Disclaimer:/i)).toBeVisible();
+    await expect(page.getByText('Incomplete 30-Day Coverage:')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('30-Day Status Clear:')).toBeHidden();
+
+    // Switch to Satellite basemap and assert {z}/{y}/{x} coordinates (y ~ 3281..3283 before x ~ 5757..5759)
+    await page.getByRole('button', { name: 'Satellite' }).click();
+    await expect.poll(() => satelliteUrls.length, { timeout: 10_000 }).toBeGreaterThan(0);
+    expect(satelliteUrls.some((u) => /\/tile\/13\/328\d\/575\d$/.test(u))).toBe(true);
+    expect(satelliteUrls.some((u) => /\/tile\/13\/575\d\/328\d$/.test(u))).toBe(false);
+
+    // Forecast horizon switch updates active UI state cleanly
+    await page.getByRole('button', { name: '48h', exact: true }).click();
+    await expect(page.getByRole('button', { name: '48h', exact: true })).toHaveClass(/bg-\[#173C79\]/);
+
+    // Verify manual engine mode selection is NOT overridden by healthy backend check
+    await page.route('http://127.0.0.1:49991/api/health', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', ready: true, version: '0.3.0' }),
+      });
+    });
+    await page.route('http://127.0.0.1:49991/api/forecast', async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'unavailable' }),
+      });
+    });
+
+    await page.goto('/settings');
+    await expect(page.getByText('Demonstration Emergency Tier Simulation Toggle')).toBeVisible();
+    await page.getByRole('button', { name: /In-Browser Mode/i }).click();
+    await page.getByLabel('Server Connection Address').fill('http://127.0.0.1:49991');
+    await page.getByRole('button', { name: 'Check Server Connection' }).click();
+    await expect(page.getByText('System Status: Healthy')).toBeVisible({ timeout: 8000 });
+    // Connected Analytics Server must NOT auto-activate over manually picked In-Browser Mode
+    await expect(
+      page.getByRole('button', { name: /In-Browser Mode/i }).locator('svg')
+    ).toBeVisible();
+
+    // Rapid optimizer configuration changes in /reports must not leave Run button stuck loading
+    await page.goto('/reports');
+    await page.getByRole('button', { name: /2001 Demo/i }).click();
+    await page.getByRole('button', { name: 'Run Budget Optimization' }).click();
+    await expect(page.getByRole('button', { name: 'Run Budget Optimization' })).toBeEnabled({
+      timeout: 15_000,
+    });
   });
 });

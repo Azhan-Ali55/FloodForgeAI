@@ -23,6 +23,8 @@ import {
 } from './simulationService';
 
 interface BackendOptimizeResponse {
+  engine?: string;
+  provenance?: string;
   interventions: Array<{
     id: string;
     type: 'storage' | 'permeable_surface' | 'drainage';
@@ -39,27 +41,70 @@ interface BackendOptimizeResponse {
   }>;
 }
 
-function validateOptimizeResponse(
+const VALID_BACKEND_INTERVENTION_TYPES = new Set(['storage', 'permeable_surface', 'drainage']);
+
+export function validateOptimizeResponse(
   data: BackendOptimizeResponse,
   rows: number,
-  cols: number
+  cols: number,
+  maxBudgetPkr?: number
 ): void {
-  if (!data || !Array.isArray(data.interventions)) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.interventions)) {
     throw new Error('Malformed /api/optimize response: missing interventions array');
   }
+  let totalCost = 0;
   for (const iv of data.interventions) {
     if (
+      !iv ||
+      typeof iv !== 'object' ||
       typeof iv.id !== 'string' ||
+      iv.id.trim().length === 0 ||
+      !VALID_BACKEND_INTERVENTION_TYPES.has(iv.type) ||
       !Number.isInteger(iv.row) ||
       !Number.isInteger(iv.col) ||
       iv.row < 0 ||
       iv.row >= rows ||
       iv.col < 0 ||
       iv.col >= cols ||
+      typeof iv.size !== 'number' ||
+      !Number.isFinite(iv.size) ||
+      iv.size <= 0 ||
       typeof iv.cost_pkr !== 'number' ||
-      !Number.isFinite(iv.cost_pkr)
+      !Number.isFinite(iv.cost_pkr) ||
+      iv.cost_pkr < 0
     ) {
-      throw new Error(`Invalid intervention coordinate or cost from /api/optimize (${iv?.id})`);
+      throw new Error(`Invalid intervention payload from /api/optimize (${iv?.id ?? 'unknown'})`);
+    }
+    totalCost += iv.cost_pkr;
+  }
+
+  if (maxBudgetPkr !== undefined && totalCost > maxBudgetPkr + 1) {
+    throw new Error(`Optimizer portfolio cost ${totalCost} exceeds budget ${maxBudgetPkr}`);
+  }
+
+  if (data.pareto_frontier !== undefined) {
+    if (!Array.isArray(data.pareto_frontier)) {
+      throw new Error('Malformed pareto_frontier in /api/optimize response');
+    }
+    for (const pt of data.pareto_frontier) {
+      if (
+        !pt ||
+        typeof pt.budget_pkr !== 'number' ||
+        !Number.isFinite(pt.budget_pkr) ||
+        pt.budget_pkr < 0 ||
+        typeof pt.cost_pkr !== 'number' ||
+        !Number.isFinite(pt.cost_pkr) ||
+        pt.cost_pkr < 0 ||
+        pt.cost_pkr > pt.budget_pkr + 1 ||
+        typeof pt.exposure_reduction_pct !== 'number' ||
+        !Number.isFinite(pt.exposure_reduction_pct) ||
+        pt.exposure_reduction_pct < 0 ||
+        pt.exposure_reduction_pct > 100 ||
+        !Number.isInteger(pt.selected_count) ||
+        pt.selected_count < 0
+      ) {
+        throw new Error('Invalid Pareto frontier entry from /api/optimize');
+      }
     }
   }
 }
@@ -136,7 +181,7 @@ export async function executeOptimization(
       25000
     );
 
-    validateOptimizeResponse(optPayload, twin.rows, twin.cols);
+    validateOptimizeResponse(optPayload, twin.rows, twin.cols, config.budgetPkr);
 
     const mappedInterventions: Intervention[] = optPayload.interventions.map((raw) => {
       const fType = fromBackendInterventionType(raw.type);
@@ -308,6 +353,8 @@ export async function executeOptimization(
             validationSamples: paretoFrontier.length,
           };
         })(),
+        engineSource: 'python_api',
+        provenance: 'SIMULATED',
         runtimeMs: Number((performance.now() - t0).toFixed(1)),
       },
       usedFallback: false,
@@ -316,8 +363,13 @@ export async function executeOptimization(
     if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
       throw err;
     }
+    const fallbackResult = runPortfolioOptimizationLocal(twin, scenario, config, officialAgencyOverride);
     return {
-      result: runPortfolioOptimizationLocal(twin, scenario, config, officialAgencyOverride),
+      result: {
+        ...fallbackResult,
+        engineSource: 'local_d8',
+        provenance: 'FALLBACK',
+      },
       usedFallback: true,
       error: err instanceof Error ? err.message : 'Optimizer API unavailable',
     };

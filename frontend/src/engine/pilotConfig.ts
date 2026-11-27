@@ -191,11 +191,11 @@ export const ALERT_TIER_META: Record<
     summary: 'High screening-level exposure across dense Rawalpindi wards; verify PMD bulletins.',
   },
   Emergency: {
-    label: 'CRITICAL (AUTHORIZED)',
+    label: 'CRITICAL (DEMO OVERRIDE)',
     color: '#D94343',
     bg: 'rgba(217, 67, 67, 0.22)',
     border: 'rgba(217, 67, 67, 0.75)',
-    summary: 'Agency-authorized Emergency tier enabled via PMD/NDMA override.',
+    summary: 'Simulated Emergency tier unlocked via local demonstration toggle (not an official PMD/NDMA directive).',
   },
 };
 

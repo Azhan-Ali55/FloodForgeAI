@@ -148,22 +148,23 @@ export function Settings() {
         </div>
       </MunicipalPanel>
 
-      {/* Official Agency Alert Gate */}
+      {/* Demonstration Emergency Tier Simulation Toggle */}
       <MunicipalPanel
-        title="Official PMD / NDMA Emergency Tier Authorization Gate"
+        title="Demonstration Emergency Tier Simulation Toggle"
         icon={<ShieldAlert className="w-4 h-4" />}
         bodyClassName="p-4"
       >
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-xs text-[#5A6A7E] leading-relaxed">
-              By default, automated <strong className="text-[#D94343]">CRITICAL / EMERGENCY</strong> public evacuation directives are strictly blocked. Enable only when an authorized PMD/NDMA hydrometric bulletin is active.
+              <strong className="text-[#173C79]">Demonstration control only (not connected to official PMD / NDMA systems).</strong> By default, the <strong className="text-[#D94343]">Emergency</strong> alert tier is locked in screening mode. Toggle only for tabletop drills or UI simulations — no real public evacuation directives are issued.
             </p>
           </div>
 
           <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
             <input
               type="checkbox"
+              aria-label="Demonstration Emergency Tier Simulation Toggle"
               checked={officialAgencyOverride}
               onChange={(e) => setOfficialAgencyOverride(e.target.checked)}
               className="sr-only peer"

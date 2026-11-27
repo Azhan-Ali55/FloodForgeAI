@@ -199,14 +199,14 @@ export function MunicipalPanel({
         className
       )}
     >
-      <div className="bg-[#173C79] text-white px-3.5 py-2 flex items-center justify-between gap-2">
+      <div className="bg-[#173C79] text-white px-3.5 py-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {icon && <span className="flex-shrink-0 text-white/90">{icon}</span>}
           <h2 className="font-heading text-xs font-semibold uppercase tracking-wider leading-snug">
             {title}
           </h2>
         </div>
-        {rightSlot && <div className="flex-shrink-0">{rightSlot}</div>}
+        {rightSlot && <div className="flex-shrink-0 max-w-full">{rightSlot}</div>}
       </div>
       <div className={bodyClassName}>{children}</div>
     </section>

@@ -56,7 +56,7 @@ function FloodForgeMunicipalLogo() {
         <div className="font-heading font-bold text-[15px] text-[#173C79] tracking-tight truncate">
           FloodForgeAI
         </div>
-        <div className="text-[10px] font-medium text-[#5A6A7E] hidden sm:block truncate">
+        <div className="text-[10px] font-medium text-[#5A6A7E] hidden 2xl:block truncate">
           Municipal Environmental &amp; Flood Portal
         </div>
       </div>
@@ -118,36 +118,40 @@ export function TopBar() {
           </nav>
         </div>
 
-        {/* Right: Two-Mode Switch, Sync Status, Timestamp, Notifications */}
+        {/* Right: Single Segmented Mode Switch, Sync Status, Timestamp, Notifications */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <div
             role="group"
             aria-label="Operational mode switch"
-            className="hidden 2xl:flex items-center rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] p-0.5 text-[11px] font-semibold"
+            className="hidden md:flex items-center rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] p-0.5 text-[11px] font-semibold"
           >
             <button
               type="button"
+              aria-label="Live Operations (50mm)"
+              aria-pressed={operationalMode === 'live_ops'}
               onClick={() => setOperationalMode('live_ops')}
               className={cn(
-                'px-2 py-1 rounded-xs transition-colors cursor-pointer whitespace-nowrap',
+                'px-2.5 py-1 rounded-xs transition-colors cursor-pointer whitespace-nowrap',
                 operationalMode === 'live_ops'
-                  ? 'bg-[#173C79] text-white'
+                  ? 'bg-[#173C79] text-white shadow-xs'
                   : 'text-[#5A6A7E] hover:text-[#173C79]'
               )}
             >
-              Live Ops (50mm)
+              Live Ops <span className="hidden xl:inline font-mono text-[10px] opacity-85">(50mm)</span>
             </button>
             <button
               type="button"
+              aria-label="2001 Cloudburst Demo (150mm)"
+              aria-pressed={operationalMode === 'demo_2001'}
               onClick={() => setOperationalMode('demo_2001')}
               className={cn(
-                'px-2 py-1 rounded-xs transition-colors cursor-pointer whitespace-nowrap',
+                'px-2.5 py-1 rounded-xs transition-colors cursor-pointer whitespace-nowrap',
                 operationalMode === 'demo_2001'
-                  ? 'bg-[#D94343] text-white'
+                  ? 'bg-[#D94343] text-white shadow-xs'
                   : 'text-[#5A6A7E] hover:text-[#D94343]'
               )}
             >
-              2001 Demo (150mm)
+              2001 Demo <span className="hidden xl:inline font-mono text-[10px] opacity-85">(150mm)</span>
             </button>
           </div>
 
@@ -172,13 +176,13 @@ export function TopBar() {
             )}
           >
             <RefreshCw
-              className={cn('w-3.5 h-3.5', isSyncingWeather && 'animate-spin')}
+              className={cn('w-3.5 h-3.5', !isHistoric2001 && isSyncingWeather && 'animate-spin')}
             />
             <span className="hidden sm:inline">
-              {isSyncingWeather
-                ? 'Syncing...'
-                : isHistoric2001
-                  ? '2001 Cloudburst Archive'
+              {isHistoric2001
+                ? '2001 Cloudburst Archive'
+                : isSyncingWeather
+                  ? 'Syncing...'
                   : isLiveWeather
                     ? 'Open-Meteo Live'
                     : monsoonStressMode
@@ -268,6 +272,44 @@ export function TopBar() {
             className="lg:hidden p-1.5 rounded-sm border border-[#D6DCE4] bg-[#F5F6F7] text-[#173C79] cursor-pointer"
           >
             {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile Mode Sub-bar (shown only below md so mode selector stays 1 click away without duplicating desktop controls) */}
+      <div className="md:hidden border-t border-[#E6EAEF] bg-[#F8FAFC] px-3 py-1.5 flex items-center justify-between gap-2">
+        <div
+          role="group"
+          aria-label="Mobile operational mode switch"
+          className="flex flex-1 items-center rounded-sm bg-white border border-[#D6DCE4] p-0.5 text-[11px] font-semibold"
+        >
+          <button
+            type="button"
+            aria-label="Live Operations Mobile (50mm)"
+            aria-pressed={operationalMode === 'live_ops'}
+            onClick={() => setOperationalMode('live_ops')}
+            className={cn(
+              'flex-1 px-2 py-1 rounded-xs transition-colors cursor-pointer text-center',
+              operationalMode === 'live_ops'
+                ? 'bg-[#173C79] text-white'
+                : 'text-[#5A6A7E]'
+            )}
+          >
+            Live Ops (50mm)
+          </button>
+          <button
+            type="button"
+            aria-label="2001 Cloudburst Demo Mobile (150mm)"
+            aria-pressed={operationalMode === 'demo_2001'}
+            onClick={() => setOperationalMode('demo_2001')}
+            className={cn(
+              'flex-1 px-2 py-1 rounded-xs transition-colors cursor-pointer text-center',
+              operationalMode === 'demo_2001'
+                ? 'bg-[#D94343] text-white'
+                : 'text-[#5A6A7E]'
+            )}
+          >
+            2001 Demo (150mm)
           </button>
         </div>
       </div>

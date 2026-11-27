@@ -47,31 +47,79 @@ interface BackendSimulateResponse {
   zone_breakdown?: Record<string, Record<string, number>>;
 }
 
-function validateSimulateResponse(
+export function validateSimulateResponse(
   data: BackendSimulateResponse,
   expectedRows: number,
   expectedCols: number
 ): void {
   if (
     !data ||
+    typeof data !== 'object' ||
     !Array.isArray(data.accumulation_mm) ||
     data.accumulation_mm.length !== expectedRows ||
     !Array.isArray(data.exposed_mask) ||
     data.exposed_mask.length !== expectedRows ||
     !data.metrics ||
-    typeof data.metrics.exposed_area_km2 !== 'number' ||
-    !Number.isFinite(data.metrics.exposed_area_km2)
+    typeof data.metrics !== 'object'
   ) {
     throw new Error('Malformed /api/simulate response shape or grid dimensions');
   }
+
+  const metricKeys: Array<keyof BackendSimulateResponse['metrics']> = [
+    'exposed_area_km2',
+    'buildings_exposed',
+    'population_exposed',
+    'road_cells_exposed',
+  ];
+  for (const k of metricKeys) {
+    const val = data.metrics[k];
+    if (typeof val !== 'number' || !Number.isFinite(val) || val < 0) {
+      throw new Error(`Invalid /api/simulate metric '${k}': ${String(val)}`);
+    }
+  }
+  if (!data.metrics.facilities_exposed || typeof data.metrics.facilities_exposed !== 'object') {
+    throw new Error('Malformed /api/simulate metrics.facilities_exposed');
+  }
+
   for (let r = 0; r < expectedRows; r++) {
+    const accRow = data.accumulation_mm[r];
+    const maskRow = data.exposed_mask[r];
     if (
-      !Array.isArray(data.accumulation_mm[r]) ||
-      data.accumulation_mm[r].length !== expectedCols ||
-      !Array.isArray(data.exposed_mask[r]) ||
-      data.exposed_mask[r].length !== expectedCols
+      !Array.isArray(accRow) ||
+      accRow.length !== expectedCols ||
+      !Array.isArray(maskRow) ||
+      maskRow.length !== expectedCols
     ) {
       throw new Error(`Grid width mismatch at row ${r} in /api/simulate response`);
+    }
+    for (let c = 0; c < expectedCols; c++) {
+      const accVal = accRow[c];
+      if (typeof accVal !== 'number' || !Number.isFinite(accVal) || accVal < 0) {
+        throw new Error(`Invalid accumulation_mm value at [${r}, ${c}]: ${String(accVal)}`);
+      }
+      if (typeof maskRow[c] !== 'boolean') {
+        throw new Error(`Invalid exposed_mask value at [${r}, ${c}]: ${String(maskRow[c])}`);
+      }
+    }
+  }
+
+  if (data.risk_transfer !== undefined && data.risk_transfer !== null) {
+    const rt = data.risk_transfer;
+    if (
+      !Array.isArray(rt.worse_mask) ||
+      rt.worse_mask.length !== expectedRows ||
+      typeof rt.buildings_worse !== 'number' ||
+      !Number.isFinite(rt.buildings_worse) ||
+      typeof rt.population_worse !== 'number' ||
+      !Number.isFinite(rt.population_worse) ||
+      typeof rt.flagged !== 'boolean'
+    ) {
+      throw new Error('Malformed risk_transfer block in /api/simulate response');
+    }
+    for (let r = 0; r < expectedRows; r++) {
+      if (!Array.isArray(rt.worse_mask[r]) || rt.worse_mask[r].length !== expectedCols) {
+        throw new Error(`risk_transfer.worse_mask width mismatch at row ${r}`);
+      }
     }
   }
 }
@@ -79,9 +127,13 @@ function validateSimulateResponse(
 function flatten2D(arr: number[][], rows: number, cols: number): Float64Array {
   const out = new Float64Array(rows * cols);
   for (let r = 0; r < rows; r++) {
+    const rowArr = arr[r];
     for (let c = 0; c < cols; c++) {
-      const v = arr[r]?.[c] ?? 0;
-      out[r * cols + c] = Number.isFinite(v) ? v : 0;
+      const v = rowArr[c];
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+        throw new Error(`Invalid grid cell accumulation at [${r}, ${c}]`);
+      }
+      out[r * cols + c] = v;
     }
   }
   return out;

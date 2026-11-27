@@ -156,11 +156,22 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
   const [demo2001Hour, setDemo2001HourState] = useState<number>(9); // 09:00 PKT
   const [backendForecast, setBackendForecast] = useState<BackendForecastSummary | null>(null);
   const [forecastHorizon, setForecastHorizon] = useState<ForecastHorizon>(24);
-  const [engineMode, setEngineMode] = useState<EngineMode>(DEFAULT_ENGINE_MODE);
+  const [engineMode, setEngineModeState] = useState<EngineMode>(DEFAULT_ENGINE_MODE);
+  const manualEngineSelectionRef = useRef<boolean>(false);
+  const setEngineMode = useCallback((m: EngineMode) => {
+    manualEngineSelectionRef.current = true;
+    setEngineModeState(m);
+  }, []);
   const [apiUrl, setApiUrl] = useState<string>(DEFAULT_API_BASE_URL);
   const [apiHealthy, setApiHealthy] = useState(false);
   const [apiLatencyMs, setApiLatencyMs] = useState<number | null>(null);
   const [officialAgencyOverride, setOfficialAgencyOverride] = useState(false);
+  const telemetryAbortRef = useRef<AbortController | null>(null);
+  const telemetrySeqRef = useRef(0);
+  const weatherRefreshAbortRef = useRef<AbortController | null>(null);
+  const weatherSeqRef = useRef(0);
+  const simAbortRef = useRef<AbortController | null>(null);
+  const simSeqRef = useRef(0);
 
   const [liveWeather, setLiveWeather] = useState<WeatherBundle>(() =>
     createDeterministicFallbackWeather(false)
@@ -276,19 +287,95 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }, []);
 
+  const syncBackendTelemetry = useCallback(
+    async (externalSignal?: AbortSignal) => {
+      telemetryAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      telemetryAbortRef.current = ctrl;
+      const reqSeq = ++telemetrySeqRef.current;
+
+      const onExtAbort = () => ctrl.abort();
+      if (externalSignal) {
+        if (externalSignal.aborted) ctrl.abort();
+        else externalSignal.addEventListener('abort', onExtAbort, { once: true });
+      }
+
+      try {
+        if (!apiUrl.trim()) {
+          if (reqSeq === telemetrySeqRef.current) {
+            setApiHealthy(false);
+            setApiLatencyMs(null);
+            setBackendForecast(null);
+          }
+          return { ok: false, latencyMs: 0, error: 'Backend URL not configured for static deployment.' };
+        }
+
+        const res = await pingBackendHealth(apiUrl, ctrl.signal);
+        if (ctrl.signal.aborted || reqSeq !== telemetrySeqRef.current) {
+          return { ok: false, latencyMs: res.latencyMs, aborted: true };
+        }
+        setApiHealthy(res.ok);
+        setApiLatencyMs(res.latencyMs);
+
+        if (res.ok) {
+          if (!manualEngineSelectionRef.current) {
+            setEngineModeState('api');
+          }
+          try {
+            const bf = await fetchBackendForecast(apiUrl, ctrl.signal);
+            if (!ctrl.signal.aborted && reqSeq === telemetrySeqRef.current) {
+              setBackendForecast(bf);
+            }
+          } catch (err) {
+            if (ctrl.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+              return { ok: false, latencyMs: res.latencyMs, aborted: true };
+            }
+            if (reqSeq === telemetrySeqRef.current) {
+              setBackendForecast(null);
+            }
+          }
+        } else {
+          setBackendForecast(null);
+        }
+        return res;
+      } catch (err) {
+        if (ctrl.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+          return { ok: false, latencyMs: 0, aborted: true };
+        }
+        return {
+          ok: false,
+          latencyMs: 0,
+          error: err instanceof Error ? err.message : 'Backend telemetry check failed',
+        };
+      } finally {
+        if (externalSignal) externalSignal.removeEventListener('abort', onExtAbort);
+      }
+    },
+    [apiUrl]
+  );
+
   const refreshWeather = useCallback(async () => {
+    weatherRefreshAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    weatherRefreshAbortRef.current = ctrl;
+    const reqSeq = ++weatherSeqRef.current;
+
     setIsSyncingWeather(true);
     setMonsoonStressMode(false);
     setSelectedOutlookDay(null);
     try {
-      const bundle = await fetchNullahLaiWeather(true);
+      const [bundle] = await Promise.all([
+        fetchNullahLaiWeather(true, ctrl.signal),
+        apiUrl.trim() ? syncBackendTelemetry(ctrl.signal) : Promise.resolve(null),
+      ]);
+      if (ctrl.signal.aborted || reqSeq !== weatherSeqRef.current) return;
       setLiveWeather(bundle);
       if (bundle.source === 'OPEN_METEO_LIVE') {
         addEvent(
           'WEATHER',
-          'success',
+          bundle.forecastState === 'verified' ? 'success' : 'warning',
           'Open-Meteo Forecast Synchronized',
-          `24h=${bundle.forecast24hMm} mm, 72h=${bundle.forecast72hMm} mm, 7d API=${bundle.api7DayMm} mm.`
+          `24h=${bundle.forecast24hMm} mm, 72h=${bundle.forecast72hMm} mm, 7d API=${bundle.api7DayMm} mm (${bundle.coveragePct}% coverage).`
         );
         pushToast(
           'Weather Telemetry Synced',
@@ -300,13 +387,21 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
           'WEATHER',
           'warning',
           'Weather API Fallback Active',
-          'Serving deterministic/cached rainfall profile; live Open-Meteo unreachable.'
+          bundle.forecastState === 'stale'
+            ? `Serving cached archive (${bundle.cacheAgeHours}h old).`
+            : 'Weather provider unavailable; deterministic fallback active (not live telemetry).'
         );
       }
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        addEvent('WEATHER', 'warning', 'Weather Sync Failed', 'Unable to refresh weather telemetry.');
+      }
     } finally {
-      setIsSyncingWeather(false);
+      if (reqSeq === weatherSeqRef.current) {
+        setIsSyncingWeather(false);
+      }
     }
-  }, [addEvent, pushToast]);
+  }, [apiUrl, syncBackendTelemetry, addEvent, pushToast]);
 
   useEffect(() => {
     let active = true;
@@ -331,72 +426,76 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     let active = true;
+    const ctrl = new AbortController();
+    const reqSeq = ++weatherSeqRef.current;
     (async () => {
       setIsSyncingWeather(true);
-      const bundle = await fetchNullahLaiWeather(false);
-      if (!active) return;
-      setLiveWeather(bundle);
-      setIsSyncingWeather(false);
-      addEvent(
-        'WEATHER',
-        bundle.source === 'OPEN_METEO_LIVE' ? 'success' : 'warning',
-        bundle.source === 'OPEN_METEO_LIVE'
-          ? 'Open-Meteo Live Feed Connected'
-          : 'Demonstration Weather Fallback',
-        `Source: ${bundle.source} · 72h total ${bundle.forecast72hMm} mm`
-      );
+      try {
+        const bundle = await fetchNullahLaiWeather(false, ctrl.signal);
+        if (!active || reqSeq !== weatherSeqRef.current) return;
+        setLiveWeather(bundle);
+        addEvent(
+          'WEATHER',
+          bundle.forecastState === 'verified' ? 'success' : 'warning',
+          bundle.source === 'OPEN_METEO_LIVE'
+            ? 'Open-Meteo Live Feed Connected'
+            : 'Demonstration Weather Fallback',
+          `State: ${bundle.forecastState} (${bundle.coveragePct}% coverage) · 72h total ${bundle.forecast72hMm} mm`
+        );
+      } catch {
+        // aborted on unmount
+      } finally {
+        if (active && reqSeq === weatherSeqRef.current) {
+          setIsSyncingWeather(false);
+        }
+      }
     })();
     return () => {
       active = false;
+      ctrl.abort();
     };
   }, [addEvent]);
 
-  const syncBackendTelemetry = useCallback(async () => {
-    if (!apiUrl.trim()) {
-      setApiHealthy(false);
-      setApiLatencyMs(null);
-      setBackendForecast(null);
-      return { ok: false, latencyMs: 0, error: 'Backend URL not configured for static deployment.' };
-    }
-    const res = await pingBackendHealth(apiUrl);
-    setApiHealthy(res.ok);
-    setApiLatencyMs(res.latencyMs);
-    if (res.ok) {
-      setEngineMode('api');
-      try {
-        const bf = await fetchBackendForecast(apiUrl);
-        setBackendForecast(bf);
-      } catch {
-        setBackendForecast(null);
-      }
-    }
-    return res;
-  }, [apiUrl]);
-
+  // Debounced backend health & forecast synchronization when apiUrl changes
   useEffect(() => {
-    let active = true;
-    syncBackendTelemetry().then((res) => {
-      if (!active || !res.ok) return;
-      addEvent(
-        'SYSTEM',
-        'success',
-        'Live Simulation Engine Active',
-        `System Status: Healthy (${res.latencyMs} ms) — live weather forecast & flood simulation active.`
-      );
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      syncBackendTelemetry(ctrl.signal).then((res) => {
+        if (ctrl.signal.aborted || !res.ok || 'aborted' in res) return;
+        addEvent(
+          'SYSTEM',
+          'success',
+          'Live Simulation Engine Active',
+          `System Status: Healthy (${res.latencyMs} ms) — live weather forecast & flood simulation available.`
+        );
+      });
+    }, 250);
     return () => {
-      active = false;
+      clearTimeout(timer);
+      ctrl.abort();
     };
   }, [syncBackendTelemetry, addEvent]);
 
+  // Genuine active-session telemetry polling (every 15 min while tab is visible in live_ops)
+  useEffect(() => {
+    if (operationalMode !== 'live_ops') return;
+    const interval = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void refreshWeather();
+    }, 15 * 60_000);
+    return () => window.clearInterval(interval);
+  }, [operationalMode, refreshWeather]);
+
   const checkApiHealth = useCallback(async () => {
     const res = await syncBackendTelemetry();
+    if ('aborted' in res && res.aborted) return;
     if (res.ok) {
-      pushToast('System Status: Healthy', `Live Simulation Engine Active (${res.latencyMs} ms).`, 'success');
+      pushToast('System Status: Healthy', `Live Simulation Engine Reachable (${res.latencyMs} ms).`, 'success');
     } else {
+      const errMsg = 'error' in res && res.error ? res.error : undefined;
       pushToast(
         'Backend Unreachable',
-        res.error || 'Using in-browser deterministic screening engine.',
+        errMsg || 'Using in-browser deterministic screening engine.',
         'warning'
       );
     }
@@ -410,24 +509,18 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
       setLiveWeather(stress);
       if (stress.earliestFloodAlert) {
         setSelectedOutlookDay(stress.earliestFloodAlert.dayOffset);
+        // Keep simulated stress-test notice strictly inside dashboard UI; never emit OS/operational notifications
         pushToast(
-          '30-Day Monsoon Surge Test Active',
+          '30-Day Monsoon Surge Test Active (Simulated)',
           stress.earliestFloodAlert.summary,
           'warning'
         );
-        if (
-          typeof window !== 'undefined' &&
-          'Notification' in window &&
-          Notification.permission === 'granted'
-        ) {
-          new Notification('FloodForge AI — 30-Day Flood Watch', {
-            body: stress.earliestFloodAlert.summary,
-          });
-        }
       }
     } else {
       setSelectedOutlookDay(null);
-      fetchNullahLaiWeather(false).then((b) => setLiveWeather(b));
+      fetchNullahLaiWeather(false)
+        .then((b) => setLiveWeather(b))
+        .catch(() => {});
     }
   }, [monsoonStressMode, pushToast]);
 
@@ -435,7 +528,7 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     if (typeof window === 'undefined' || !('Notification' in window)) {
       pushToast(
         'In-App Alerts Active',
-        'Browser Notification API unavailable; 30-day alerts remain active inside the dashboard.',
+        'Browser Notification API unavailable; active-session alerts appear inside the dashboard.',
         'info'
       );
       return;
@@ -447,19 +540,38 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     const granted = perm === 'granted';
     setBrowserAlertsEnabled(granted);
     if (granted) {
-      const msg = weather.earliestFloodAlert
-        ? weather.earliestFloodAlert.summary
-        : 'All clear for the next 30 days. You will be alerted if heavy rainfall is detected.';
-      new Notification('FloodForge AI — Advance Alerts Enabled', { body: msg });
-      pushToast('Advance Alerts Enabled', msg, 'success');
+      const isOperationalVerified =
+        operationalMode === 'live_ops' &&
+        !monsoonStressMode &&
+        weather.forecastState === 'verified';
+      const hasFull30d =
+        isOperationalVerified && weather.outlookSource === 'OPEN_METEO_16D_ENSEMBLE';
+      const msg = !isOperationalVerified
+        ? 'Active-session alerts enabled. Operational flood alerts trigger only during verified live-forecast sessions.'
+        : weather.earliestFloodAlert
+          ? weather.earliestFloodAlert.summary
+          : hasFull30d
+            ? 'All clear across verified 30-day outlook. Session checks refresh every 15 minutes while this tab stays open.'
+            : '16-day verified outlook shows no heavy rain (Days 17–30 ensemble coverage incomplete).';
+      if (isOperationalVerified && weather.earliestFloodAlert) {
+        new Notification('FloodForge AI — Verified Forecast Alert', { body: msg });
+      }
+      pushToast('Active-Session Alerts Enabled', msg, isOperationalVerified ? 'success' : 'info');
     } else {
       pushToast(
         'Notification Permission Denied',
-        'Enable notifications in browser settings to receive background 30-day alerts.',
+        'Enable notifications in browser settings for active-session desktop alerts while this tab is open.',
         'warning'
       );
     }
-  }, [weather.earliestFloodAlert, pushToast]);
+  }, [
+    operationalMode,
+    monsoonStressMode,
+    weather.forecastState,
+    weather.outlookSource,
+    weather.earliestFloodAlert,
+    pushToast,
+  ]);
 
   // Mitigation Optimizer & Equity Audit (defined before mode scenario wiring)
   const [optConfig, setOptConfig] = useState<OptimizationConfig>(DEFAULT_OPT_CONFIG);
@@ -481,7 +593,11 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isAutoSyncingOpt, setIsAutoSyncingOpt] = useState(false);
   const [optProgressStage, setOptProgressStage] = useState('');
-  const optReqSeqRef = useRef(0);
+  const manualOptSeqRef = useRef(0);
+  const manualOptAbortRef = useRef<AbortController | null>(null);
+  const autoOptSeqRef = useRef(0);
+  const autoOptAbortRef = useRef<AbortController | null>(null);
+  const appliedOptEpochRef = useRef(0);
   const hasUserInteractedWithRoiRef = useRef(false);
 
   const setPitchBudgetPkr = useCallback((budgetPkr: number) => {
@@ -565,8 +681,18 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
         threshold_mm: activeThresholdMm,
       };
     }
-    if (backendForecast && !monsoonStressMode) {
-      return buildScenarioFromBackendForecast(backendForecast, optConfig.budgetPkr);
+    if (
+      backendForecast &&
+      !monsoonStressMode &&
+      backendForecast.forecast_status !== 'unavailable' &&
+      (!backendForecast.fetched_at_utc ||
+        (Date.now() - new Date(backendForecast.fetched_at_utc).getTime()) / 3600_000 <= 12)
+    ) {
+      return buildScenarioFromBackendForecast(
+        backendForecast,
+        optConfig.budgetPkr,
+        forecastHorizon
+      );
     }
     return {
       ...buildForecastScenario(weather, forecastHorizon, optConfig.budgetPkr, 'LIVE_FORECAST'),
@@ -689,26 +815,33 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     )
   );
 
-  // Re-run simulation baseline when studyArea changes
+  const simScenarioRef = useRef(simScenario);
+  simScenarioRef.current = simScenario;
+
+  // Re-run simulation baseline when studyArea or operational baseline changes
   useEffect(() => {
     setSimBaselineResult(operationalResult);
     setSimActiveResult(
       runScenarioLocal(
         twin,
-        simScenario,
+        simScenarioRef.current,
         { interventions: [] },
         operationalResult,
         officialAgencyOverride
       )
     );
-  }, [twin, operationalResult, officialAgencyOverride]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [twin, operationalResult, officialAgencyOverride]);
 
   const runCloudburstSimulation = useCallback(
     async (custom?: Scenario) => {
+      simAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      simAbortRef.current = ctrl;
+      const reqId = ++simSeqRef.current;
+
       const target = custom ?? simScenario;
       if (custom) setSimScenario(custom);
       setIsSimulating(true);
-      await new Promise((r) => setTimeout(r, 180));
       try {
         const base = operationalResult;
         const { result, usedFallback } = await executeSimulation(
@@ -718,8 +851,10 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
           target,
           { interventions: [] },
           base,
-          officialAgencyOverride
+          officialAgencyOverride,
+          ctrl.signal
         );
+        if (ctrl.signal.aborted || reqId !== simSeqRef.current) return;
         setSimBaselineResult(base);
         setSimActiveResult(result);
         setHasCustomSimRun(true);
@@ -736,8 +871,14 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
           `Modeled ${result.metrics.exposed_area_km2} km² exposed · Risk Tier: ${result.alert_tier}.`,
           result.alert_tier === 'Warning' ? 'warning' : 'success'
         );
+      } catch (err) {
+        if (!(ctrl.signal.aborted || (err instanceof DOMException && err.name === 'AbortError'))) {
+          pushToast('Simulation Failed', 'Unable to execute cloudburst scenario.', 'warning');
+        }
       } finally {
-        setIsSimulating(false);
+        if (reqId === simSeqRef.current) {
+          setIsSimulating(false);
+        }
       }
     },
     [
@@ -752,32 +893,62 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
     ]
   );
 
-  // Reactively recompute mitigation portfolio on primitive storm/budget changes without race cancellation
+  // Reactively recompute mitigation portfolio on full configuration/storm changes with bounded LRU cache
   const designRain = optimizerDesignScenario.rainfall_mm_per_hr;
   const designDur = optimizerDesignScenario.duration_hr;
   const designWetness = optimizerDesignScenario.antecedent_wetness ?? 'normal';
+  const designUncertainty = optimizerDesignScenario.uncertainty_factor ?? 1.0;
+  const enabledTypesKey = useMemo(
+    () => [...optConfig.enabledTypes].sort().join(','),
+    [optConfig.enabledTypes]
+  );
+  const weightsKey = `${optConfig.weights.population},${optConfig.weights.buildings},${optConfig.weights.roads},${optConfig.weights.facilities},${optConfig.weights.area}`;
   const optMemoCacheRef = useRef<Map<string, OptimizationResult>>(new Map());
+  const setBoundedOptCache = useCallback((key: string, val: OptimizationResult) => {
+    const cache = optMemoCacheRef.current;
+    if (cache.has(key)) cache.delete(key);
+    cache.set(key, val);
+    while (cache.size > 16) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+      else break;
+    }
+  }, []);
+
   useEffect(() => {
     if (studyAreaId === 'nullah_lai_basin' && !realBasinTwin) return;
+    if (optConfig.enabledTypes.length === 0) return;
+
     const effectiveMode: EngineMode =
       engineMode === 'api' &&
       !hasUserInteractedWithRoiRef.current &&
       operationalMode === 'live_ops'
         ? 'local'
         : engineMode;
-    const cacheKey = `${twin.studyAreaId}:${twin.rows}:${realBasinTwin ? 'real' : 'syn'}:${operationalMode}:${designRain}:${designDur}:${designWetness}:${activeThresholdMm}:${optConfig.budgetPkr}:${effectiveMode}`;
+    const effectiveUrlKey = effectiveMode === 'api' ? apiUrl.trim() : '';
+    const cacheKey = `${twin.studyAreaId}:${twin.rows}:${realBasinTwin ? 'real' : 'syn'}:${operationalMode}:${forecastHorizon}:${selectedOutlookDay ?? 'cur'}:${designRain}:${designDur}:${designWetness}:${designUncertainty}:${activeThresholdMm}:${optConfig.budgetPkr}:${enabledTypesKey}:${weightsKey}:${effectiveMode}:${effectiveUrlKey}:${officialAgencyOverride}`;
+
     const cached = optMemoCacheRef.current.get(cacheKey);
     if (cached) {
-      ++optReqSeqRef.current;
+      optMemoCacheRef.current.delete(cacheKey);
+      optMemoCacheRef.current.set(cacheKey, cached);
+      autoOptAbortRef.current?.abort();
+      ++autoOptSeqRef.current;
+      ++appliedOptEpochRef.current;
       setOptResult(cached);
       setIsAutoSyncingOpt(false);
       return;
     }
+
     let active = true;
+    autoOptAbortRef.current?.abort();
     const abortCtrl = new AbortController();
-    const reqId = ++optReqSeqRef.current;
+    autoOptAbortRef.current = abortCtrl;
+    const reqId = ++autoOptSeqRef.current;
+    const startEpoch = ++appliedOptEpochRef.current;
+
     const timer = setTimeout(() => {
-      if (!active || reqId !== optReqSeqRef.current) return;
+      if (!active || reqId !== autoOptSeqRef.current) return;
       setIsAutoSyncingOpt(true);
       executeOptimization(
         effectiveMode,
@@ -789,15 +960,18 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
         abortCtrl.signal
       )
         .then((res) => {
-          if (!active || reqId !== optReqSeqRef.current) return;
-          optMemoCacheRef.current.set(cacheKey, res.result);
-          setOptResult(res.result);
+          if (!active || abortCtrl.signal.aborted || reqId !== autoOptSeqRef.current) return;
+          setBoundedOptCache(cacheKey, res.result);
+          if (startEpoch >= appliedOptEpochRef.current) {
+            appliedOptEpochRef.current = startEpoch;
+            setOptResult(res.result);
+          }
         })
         .catch(() => {
           // Ignore aborted in-flight optimizations
         })
         .finally(() => {
-          if (active && reqId === optReqSeqRef.current) {
+          if (reqId === autoOptSeqRef.current) {
             setIsAutoSyncingOpt(false);
           }
         });
@@ -806,8 +980,31 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
       active = false;
       abortCtrl.abort();
       clearTimeout(timer);
+      if (reqId === autoOptSeqRef.current) {
+        setIsAutoSyncingOpt(false);
+      }
     };
-  }, [twin.studyAreaId, twin.rows, realBasinTwin, operationalMode, designRain, designDur, designWetness, activeThresholdMm, optConfig.budgetPkr, engineMode, apiUrl, officialAgencyOverride]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    studyAreaId,
+    twin,
+    realBasinTwin,
+    operationalMode,
+    forecastHorizon,
+    selectedOutlookDay,
+    designRain,
+    designDur,
+    designWetness,
+    designUncertainty,
+    activeThresholdMm,
+    optConfig,
+    optimizerDesignScenario,
+    enabledTypesKey,
+    weightsKey,
+    engineMode,
+    apiUrl,
+    officialAgencyOverride,
+    setBoundedOptCache,
+  ]);
 
   const runOptimization = useCallback(
     async (overrideConfig?: OptimizationConfig) => {
@@ -820,15 +1017,16 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
         );
         return;
       }
-      const reqId = ++optReqSeqRef.current;
+
+      manualOptAbortRef.current?.abort();
+      autoOptAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      manualOptAbortRef.current = ctrl;
+      const reqId = ++manualOptSeqRef.current;
+      const runEpoch = ++appliedOptEpochRef.current;
+
       setIsOptimizing(true);
-      setOptProgressStage('Generating spatial candidate sites across 12 wards...');
-      await new Promise((r) => setTimeout(r, 150));
-      if (reqId !== optReqSeqRef.current) return;
-      setOptProgressStage('Evaluating surrogate pre-screening & D8 routing...');
-      await new Promise((r) => setTimeout(r, 160));
-      if (reqId !== optReqSeqRef.current) return;
-      setOptProgressStage('Computing multi-budget Pareto frontier & zone equity audit...');
+      setOptProgressStage('Evaluating D8 screening & multi-budget Pareto frontier...');
 
       try {
         const designStorm: Scenario = {
@@ -841,10 +1039,21 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
           twin,
           designStorm,
           cfg,
-          officialAgencyOverride
+          officialAgencyOverride,
+          ctrl.signal
         );
-        if (reqId !== optReqSeqRef.current) return;
-        setOptResult(result);
+        if (ctrl.signal.aborted || reqId !== manualOptSeqRef.current) return;
+        if (runEpoch >= appliedOptEpochRef.current) {
+          appliedOptEpochRef.current = runEpoch;
+          setOptResult(result);
+        }
+
+        const cEnabledKey = [...cfg.enabledTypes].sort().join(',');
+        const cWeightsKey = `${cfg.weights.population},${cfg.weights.buildings},${cfg.weights.roads},${cfg.weights.facilities},${cfg.weights.area}`;
+        const cUrlKey = engineMode === 'api' ? apiUrl.trim() : '';
+        const cacheKey = `${twin.studyAreaId}:${twin.rows}:${realBasinTwin ? 'real' : 'syn'}:${operationalMode}:${forecastHorizon}:${selectedOutlookDay ?? 'cur'}:${designRain}:${designDur}:${designWetness}:${designUncertainty}:${activeThresholdMm}:${cfg.budgetPkr}:${cEnabledKey}:${cWeightsKey}:${engineMode}:${cUrlKey}:${officialAgencyOverride}`;
+        setBoundedOptCache(cacheKey, result);
+
         addEvent(
           'OPTIMIZER',
           result.equityStatus === 'RISK_TRANSFER_CONCERN' ? 'warning' : 'success',
@@ -862,14 +1071,37 @@ export function FloodForgeProvider({ children }: { children: React.ReactNode }) 
           `Selected ${result.selectedPortfolio.length} sites achieving ${result.weightedReductionPct}% weighted exposure reduction.`,
           'success'
         );
+      } catch (err) {
+        if (!(ctrl.signal.aborted || (err instanceof DOMException && err.name === 'AbortError'))) {
+          pushToast('Optimization Failed', 'Unable to complete optimization run.', 'warning');
+        }
       } finally {
-        if (reqId === optReqSeqRef.current) {
+        if (reqId === manualOptSeqRef.current) {
           setIsOptimizing(false);
           setOptProgressStage('');
         }
       }
     },
-    [optConfig, optimizerDesignScenario, engineMode, apiUrl, twin, officialAgencyOverride, addEvent, pushToast]
+    [
+      optConfig,
+      optimizerDesignScenario,
+      engineMode,
+      apiUrl,
+      twin,
+      realBasinTwin,
+      operationalMode,
+      forecastHorizon,
+      selectedOutlookDay,
+      designRain,
+      designDur,
+      designWetness,
+      designUncertainty,
+      activeThresholdMm,
+      officialAgencyOverride,
+      setBoundedOptCache,
+      addEvent,
+      pushToast,
+    ]
   );
 
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);

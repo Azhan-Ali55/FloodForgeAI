@@ -249,3 +249,155 @@ def test_loader_rejects_corrupt_or_missing_rasters(tmp_path):
 def test_scenario_uncertainty_factor_scales_linearly():
     s = Scenario(rainfall_mm_per_hr=10.0, duration_hr=2.0, budget_pkr=0.0, uncertainty_factor=1.5)
     assert s.total_rainfall_mm * s.uncertainty_factor == 30.0
+
+
+def test_audit_case_a_elapsed_hours_excluded_and_expired_or_null_rejected():
+    """TEST A: At 18:00 PKT with 300mm elapsed earlier and 0mm remaining, future peak must be 0."""
+    fixed_1800 = datetime(2026, 7, 23, 18, 15, tzinfo=PKT_TZ)
+    times = [f"2026-07-23T{h:02d}:00" for h in range(24)] + [
+        f"2026-07-24T{h:02d}:00" for h in range(24)
+    ]
+    # Hours 00:00..17:00 sum to 300.0 mm; all remaining forecast hours (18:00 onward) are 0.0 mm
+    precip = [16.0] * 17 + [28.0] + [0.0] * (len(times) - 18)
+    assert sum(precip[:18]) == 300.0
+
+    class _MockResp:
+        status = 200
+
+        def __init__(self, payload: dict):
+            self._bytes = json.dumps(payload).encode()
+
+        def read(self):
+            return self._bytes
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_1800 if tz is not None else fixed_1800.replace(tzinfo=None)
+
+    with (
+        patch("floodforge.api.datetime", _FixedDatetime),
+        patch(
+            "floodforge.api.urlopen",
+            return_value=_MockResp(
+                {
+                    "hourly": {
+                        "time": times,
+                        "precipitation": precip,
+                        "soil_moisture_0_to_1cm": [0.22] * len(times),
+                    }
+                }
+            ),
+        ),
+    ):
+        status, _, body = _asgi_request("GET", "/api/forecast")
+        assert status == 200
+        assert body["aligned_pkt_time"] == "2026-07-23T18:00"
+        assert body["peak_6h_total_mm"] == 0.0
+        assert body["peak_6h_rate_mm_per_hr"] == 0.0
+        assert body["peak_6h_window_start"] is None
+        assert body["peak_1h_mm_per_hr"] == 0.0
+        assert body["future_24h_total_mm"] == 0.0
+        assert body["remaining_window_total_mm"] == 0.0
+        assert body["forecast_status"] == "verified"
+
+    # Completely elapsed timestamps -> 503 forecast_expired
+    expired_times = [f"2020-01-01T{h:02d}:00" for h in range(12)]
+    with (
+        patch("floodforge.api.datetime", _FixedDatetime),
+        patch(
+            "floodforge.api.urlopen",
+            return_value=_MockResp(
+                {
+                    "hourly": {
+                        "time": expired_times,
+                        "precipitation": [25.0] * 12,
+                    }
+                }
+            ),
+        ),
+    ):
+        status, _, err_exp = _asgi_request("GET", "/api/forecast")
+        assert status == 503
+        assert err_exp["detail"]["error_category"] == "forecast_expired"
+
+    # All-null future precipitation -> 503 weather_data_incomplete (never coerce missing to 0)
+    with (
+        patch("floodforge.api.datetime", _FixedDatetime),
+        patch(
+            "floodforge.api.urlopen",
+            return_value=_MockResp(
+                {
+                    "hourly": {
+                        "time": times[18:],
+                        "precipitation": [None] * len(times[18:]),
+                    }
+                }
+            ),
+        ),
+    ):
+        status, _, err_null = _asgi_request("GET", "/api/forecast")
+        assert status == 503
+        assert err_null["detail"]["error_category"] == "weather_data_incomplete"
+
+
+def test_audit_case_b_pareto_does_not_alter_primary_portfolio_and_independent_budgets():
+    """TEST B: Enabling include_pareto with PKR 50M budget must return the exact same primary portfolio."""
+    base_req = {
+        "scenario": {
+            "rainfall_mm_per_hr": 62.0,
+            "duration_hr": 10.0,
+            "budget_pkr": 50_000_000.0,
+            "antecedent_wetness": "saturated",
+        },
+        "threshold_mm": 150.0,
+    }
+    st1, _, res_no_pareto = _asgi_request(
+        "POST", "/api/optimize", json_body={**base_req, "include_pareto": False}
+    )
+    st2, _, res_with_pareto = _asgi_request(
+        "POST", "/api/optimize", json_body={**base_req, "include_pareto": True}
+    )
+    assert st1 == 200 and st2 == 200
+    assert res_no_pareto["provenance"] == "SIMULATED"
+    assert res_with_pareto["provenance"] == "SIMULATED"
+    assert res_with_pareto["interventions"] == res_no_pareto["interventions"]
+    assert sum(iv["cost_pkr"] for iv in res_with_pareto["interventions"]) <= 50_000_000.0
+
+    # Verify Pareto point for 50M matches primary selection and all Pareto budgets obey constraints
+    row_50m = next(p for p in res_with_pareto["pareto_frontier"] if p["budget_pkr"] == 50_000_000.0)
+    assert row_50m["selected_count"] == len(res_with_pareto["interventions"])
+    assert row_50m["cost_pkr"] == round(sum(iv["cost_pkr"] for iv in res_with_pareto["interventions"]), 2)
+    for row in res_with_pareto["pareto_frontier"]:
+        assert 0.0 <= row["cost_pkr"] <= row["budget_pkr"]
+        assert 0.0 <= row["exposure_reduction_pct"] <= 100.0
+
+
+def test_simulate_parity_reference_metrics():
+    """Capture canonical Python D8 metrics on the 200x200 Nullah Lai grid for TS cross-check."""
+    status, _, sim_res = _asgi_request(
+        "POST",
+        "/api/simulate",
+        json_body={
+            "scenario": {
+                "rainfall_mm_per_hr": 62.0,
+                "duration_hr": 10.0,
+                "budget_pkr": 200_000_000.0,
+                "antecedent_wetness": "saturated",
+            },
+            "threshold_mm": 150.0,
+            "portfolio": {"interventions": []},
+        },
+    )
+    assert status == 200
+    assert sim_res["engine"] == "python-d8-v1"
+    assert sim_res["provenance"] == "SIMULATED"
+    m = sim_res["metrics"]
+    assert m["exposed_area_km2"] > 0.5
+    assert m["buildings_exposed"] > 100

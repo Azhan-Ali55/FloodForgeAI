@@ -83,7 +83,7 @@ const BASEMAP_URLS: Record<
     label: 'Street Map',
   },
   satellite: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri',
     label: 'Satellite',
   },
@@ -255,6 +255,13 @@ export function GeospatialMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const tileLayerUrlRef = useRef<string | null>(null);
+  const tileLayerSpecRef = useRef<{ url: string; attribution: string } | null>(null);
+  const tileLayerCleanupRef = useRef<(() => void) | null>(null);
+  const tileErrorCountRef = useRef<number>(0);
+  const prevStudyAreaIdRef = useRef<string>(twin.studyAreaId);
+  const lastCursorUpdateRef = useRef<number>(0);
+  const fsTimeoutRef = useRef<number | null>(null);
   const vegOverlayRef = useRef<L.ImageOverlay | null>(null);
   const zoneOverlayRef = useRef<L.ImageOverlay | null>(null);
   const imageOverlayRef = useRef<L.ImageOverlay | null>(null);
@@ -272,6 +279,7 @@ export function GeospatialMap({
   const [quickLayersOpen, setQuickLayersOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [cursorCoords, setCursorCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [tileErrorNotice, setTileErrorNotice] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
@@ -331,14 +339,28 @@ export function GeospatialMap({
     stationGroupRef.current = stationGroup;
     mapRef.current = map;
 
-    map.on('mousemove', (ev: L.LeafletMouseEvent) => {
+    const handleMouseMove = (ev: L.LeafletMouseEvent) => {
+      const now = performance.now();
+      if (now - lastCursorUpdateRef.current < 100) return;
+      lastCursorUpdateRef.current = now;
       setCursorCoords({ lat: ev.latlng.lat, lon: ev.latlng.lng });
-    });
+    };
+    map.on('mousemove', handleMouseMove);
 
     return () => {
+      map.off('mousemove', handleMouseMove);
+      if (fsTimeoutRef.current !== null) {
+        window.clearTimeout(fsTimeoutRef.current);
+        fsTimeoutRef.current = null;
+      }
+      tileLayerCleanupRef.current?.();
+      tileLayerCleanupRef.current = null;
       map.remove();
       mapRef.current = null;
       tileLayerRef.current = null;
+      tileLayerUrlRef.current = null;
+      tileLayerSpecRef.current = null;
+      tileErrorCountRef.current = 0;
       vegOverlayRef.current = null;
       zoneOverlayRef.current = null;
       imageOverlayRef.current = null;
@@ -348,12 +370,14 @@ export function GeospatialMap({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Pan/zoom smoothly when studyArea changes
+  // Pan/zoom smoothly only when studyArea changes after initial mount
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    if (prevStudyAreaIdRef.current === twin.studyAreaId) return;
+    prevStudyAreaIdRef.current = twin.studyAreaId;
     map.setView(studyCfg.center, studyCfg.defaultZoom, { animate: true });
-  }, [studyCfg]);
+  }, [twin.studyAreaId, studyCfg]);
 
   // Focus target from hotspot/alert click (instant pan so anchored popup autoPan stays accurate)
   useEffect(() => {
@@ -364,32 +388,98 @@ export function GeospatialMap({
     });
   }, [focusTarget]);
 
-  // Switch basemap tiles + light-green vegetation base
+  // Manage base TileLayer independently of async twin/overlay hydration;
+  // reuse identical tile URL across municipal_green <-> osm by toggling CSS class.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const spec = BASEMAP_URLS[basemap];
+    if (!spec.url) {
+      tileLayerCleanupRef.current?.();
+      tileLayerCleanupRef.current = null;
+      if (tileLayerRef.current) {
+        map.removeLayer(tileLayerRef.current);
+        tileLayerRef.current = null;
+      }
+      tileLayerUrlRef.current = null;
+      tileLayerSpecRef.current = null;
+      tileErrorCountRef.current = 0;
+      setTileErrorNotice(false);
+      return;
+    }
+
+    if (tileLayerRef.current && tileLayerUrlRef.current === spec.url) {
+      const container = tileLayerRef.current.getContainer();
+      if (container) {
+        container.classList.toggle('municipal-green-tiles', Boolean(spec.className));
+      }
+      const prevSpec = tileLayerSpecRef.current;
+      if (prevSpec && prevSpec.attribution !== spec.attribution && map.attributionControl) {
+        map.attributionControl.removeAttribution(prevSpec.attribution);
+        map.attributionControl.addAttribution(spec.attribution);
+      }
+      tileLayerRef.current.options.attribution = spec.attribution;
+      tileLayerSpecRef.current = { url: spec.url, attribution: spec.attribution };
+      return;
+    }
+
+    tileLayerCleanupRef.current?.();
+    tileLayerCleanupRef.current = null;
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
+    }
+
+    tileErrorCountRef.current = 0;
+    setTileErrorNotice(false);
+
+    const layer = L.tileLayer(spec.url, {
+      attribution: spec.attribution,
+      maxZoom: 18,
+      maxNativeZoom: basemap === 'satellite' ? 15 : 18,
+      className: spec.className ?? '',
+      updateWhenZooming: false,
+      updateWhenIdle: true,
+      keepBuffer: 2,
+    });
+
+    const handleTileError = () => {
+      tileErrorCountRef.current += 1;
+      if (tileErrorCountRef.current >= 4) {
+        setTileErrorNotice(true);
+      }
+    };
+    const handleTileLoad = () => {
+      if (tileErrorCountRef.current > 0) {
+        tileErrorCountRef.current = 0;
+        setTileErrorNotice(false);
+      }
+    };
+
+    layer.on('tileerror', handleTileError);
+    layer.on('tileload', handleTileLoad);
+    tileLayerCleanupRef.current = () => {
+      layer.off('tileerror', handleTileError);
+      layer.off('tileload', handleTileLoad);
+    };
+
+    layer.addTo(map);
+    layer.bringToBack();
+    tileLayerRef.current = layer;
+    tileLayerUrlRef.current = spec.url;
+    tileLayerSpecRef.current = { url: spec.url, attribution: spec.attribution };
+  }, [basemap]);
+
+  // Switch light-green vegetation canvas overlay independently of remote TileLayer
   const vegBaseUrl = useMemo(() => renderVegetationBaseUrl(twin), [twin]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (tileLayerRef.current) {
-      map.removeLayer(tileLayerRef.current);
-      tileLayerRef.current = null;
-    }
     if (vegOverlayRef.current) {
       map.removeLayer(vegOverlayRef.current);
       vegOverlayRef.current = null;
-    }
-
-    const spec = BASEMAP_URLS[basemap];
-    if (spec.url) {
-      const layer = L.tileLayer(spec.url, {
-        attribution: spec.attribution,
-        maxZoom: 18,
-        maxNativeZoom: basemap === 'satellite' ? 15 : 18,
-        className: spec.className ?? '',
-      });
-      layer.addTo(map);
-      layer.bringToBack();
-      tileLayerRef.current = layer;
     }
 
     if ((basemap === 'municipal_green' || basemap === 'tactical_grid') && vegBaseUrl) {
@@ -935,7 +1025,13 @@ export function GeospatialMap({
   useEffect(() => {
     const onFsChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
-      setTimeout(() => mapRef.current?.invalidateSize(), 150);
+      if (fsTimeoutRef.current !== null) {
+        window.clearTimeout(fsTimeoutRef.current);
+      }
+      fsTimeoutRef.current = window.setTimeout(() => {
+        fsTimeoutRef.current = null;
+        mapRef.current?.invalidateSize();
+      }, 150);
     };
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
@@ -960,6 +1056,27 @@ export function GeospatialMap({
     >
       {/* Map Canvas Container */}
       <div ref={mapContainerRef} className="w-full h-full" />
+
+      {/* Graceful fallback indicator when external basemap tiles fail */}
+      {tileErrorNotice && basemap !== 'tactical_grid' && (
+        <div
+          role="status"
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[400] flex items-center gap-2 px-3 py-1.5 rounded bg-white/95 border border-[#EF8735]/60 text-[11px] text-[#26364A] shadow-md max-w-[90%]"
+        >
+          <Info className="w-3.5 h-3.5 text-[#EF8735] flex-shrink-0" />
+          <span className="truncate">
+            External basemap tiles temporarily unavailable — municipal vector &amp; flood layers active.
+          </span>
+          <button
+            type="button"
+            onClick={() => setTileErrorNotice(false)}
+            aria-label="Dismiss tile notice"
+            className="text-[#5A6A7E] hover:text-[#26364A] cursor-pointer flex-shrink-0"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
 
       {/* Portal Popup Content into Leaflet Popup Host (Desktop/Tablet) */}
       {selectedStation &&
