@@ -1119,7 +1119,20 @@ export function GeospatialMap({
       }, 150);
     };
     document.addEventListener('fullscreenchange', onFsChange);
-    return () => document.removeEventListener('fullscreenchange', onFsChange);
+
+    // Recalculate Leaflet dimensions whenever container resizes (e.g., sidebar collapse/expand)
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      ro = new ResizeObserver(() => {
+        mapRef.current?.invalidateSize({ pan: false });
+      });
+      ro.observe(mapContainerRef.current);
+    }
+
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      ro?.disconnect();
+    };
   }, []);
 
   const toggleFullscreen = () => {

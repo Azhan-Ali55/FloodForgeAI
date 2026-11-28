@@ -70,7 +70,7 @@ export const FloodRiskMapPanel = React.memo(function FloodRiskMapPanel({
         <div
           role="group"
           aria-label="Map scenario comparison mode"
-          className="flex items-center rounded-md bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 text-xs"
+          className="flex flex-wrap items-center rounded-md bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 text-xs max-w-full"
         >
           {(
             [

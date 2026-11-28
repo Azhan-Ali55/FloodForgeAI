@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   Activity,
@@ -140,9 +141,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   return (
     <aside
       className={cn(
-        'hidden lg:flex fixed left-0 top-0 z-30 h-screen flex-col transition-all duration-200',
+        'hidden lg:flex fixed left-0 top-0 z-30 h-screen h-dvh flex-col transition-all duration-200',
         collapsed ? 'w-0 overflow-hidden' : 'w-56'
       )}
+      aria-hidden={collapsed}
       style={{
         background: 'linear-gradient(180deg, #0B2039 0%, #104C5C 55%, #0B2039 100%)',
         borderRight: '1px solid rgba(56, 189, 248, 0.08)',
@@ -219,28 +221,61 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 }
 
 /** Mobile overlay sidebar drawer */
-export function MobileSidebarDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function MobileSidebarDrawer({
+  open,
+  onClose,
+  returnFocusRef,
+}: {
+  open: boolean;
+  onClose: () => void;
+  returnFocusRef?: React.RefObject<HTMLButtonElement | null>;
+}) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true;
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      closeButtonRef.current?.focus();
+
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+      };
+      window.addEventListener('keydown', onKeyDown);
+      return () => {
+        document.body.style.overflow = prevOverflow;
+        window.removeEventListener('keydown', onKeyDown);
+      };
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      returnFocusRef?.current?.focus();
+    }
+  }, [open, onClose, returnFocusRef]);
+
+  if (!open) return null;
+
   return (
     <>
-      {open && (
-        <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
-          onClick={onClose}
-          aria-hidden="true"
-        />
-      )}
+      <div
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+        onClick={onClose}
+        aria-hidden="true"
+      />
       <aside
-        className={cn(
-          'fixed left-0 top-0 z-50 h-screen flex flex-col lg:hidden transition-transform duration-200',
-          open ? 'translate-x-0' : '-translate-x-full'
-        )}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Mobile navigation"
+        className="fixed left-0 top-0 z-50 h-screen h-dvh flex flex-col lg:hidden"
         style={{
-          width: '224px',
+          width: 'min(260px, 82vw)',
           background: 'linear-gradient(180deg, #0B2039 0%, #104C5C 55%, #0B2039 100%)',
           borderRight: '1px solid rgba(56,189,248,0.1)',
           boxShadow: '4px 0 32px rgba(11,32,57,0.5)',
         }}
-        aria-label="Mobile navigation"
       >
         {/* Logo + Close */}
         <div className="flex items-center justify-between px-4 pt-5 pb-4 border-b border-white/8 flex-shrink-0">
@@ -249,7 +284,7 @@ export function MobileSidebarDrawer({ open, onClose }: { open: boolean; onClose:
               className="w-8 h-8 rounded-lg flex items-center justify-center"
               style={{ background: 'rgba(56,189,248,0.18)', border: '1px solid rgba(56,189,248,0.3)' }}
             >
-              <svg viewBox="0 0 32 32" className="w-5 h-5" fill="none">
+              <svg viewBox="0 0 32 32" className="w-5 h-5" fill="none" aria-hidden="true">
                 <path
                   d="M16 4C16 4 7.5 13.5 7.5 19.2C7.5 23.9 11.3 27.5 16 27.5C20.7 27.5 24.5 23.9 24.5 19.2C24.5 13.5 16 4 16 4Z"
                   stroke="#38BDF8" strokeWidth="1.8" fill="rgba(15,118,110,0.4)"
@@ -266,9 +301,11 @@ export function MobileSidebarDrawer({ open, onClose }: { open: boolean; onClose:
             </div>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 cursor-pointer"
+            aria-label="Close navigation menu"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-white/75 hover:text-white hover:bg-white/10 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -302,11 +339,9 @@ export function MobileSidebarDrawer({ open, onClose }: { open: boolean; onClose:
           ))}
         </nav>
 
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 hidden sm:block">
           <div className="px-3 pb-1 opacity-50">
-            <svg viewBox="0 0 200 24" fill="none" className="w-full">
-              <path d="M0 12 Q10 4 20 12 Q30 20 40 12 Q50 4 60 12 Q70 20 80 12 Q90 4 100 12 Q110 20 120 12 Q130 4 140 12 Q150 20 160 12 Q170 4 180 12 Q190 20 200 12" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <WaveformDecor />
           </div>
           <IslamabadLandscape />
         </div>

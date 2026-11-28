@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 import { useFloodForge } from '../../context/FloodForgeContext';
 import { cn } from '../../utils/cn';
@@ -9,6 +9,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { activeToasts, dismissToast } = useFloodForge();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const mobileMenuBtnRef = useRef<HTMLButtonElement>(null);
 
   return (
     <div
@@ -26,7 +27,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       {/* Mobile sidebar drawer */}
-      <MobileSidebarDrawer open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <MobileSidebarDrawer
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        returnFocusRef={mobileMenuBtnRef}
+      />
 
       {/* Main content area */}
       <div
@@ -40,22 +45,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onMobileMenuOpen={() => setSidebarOpen(true)}
           onExpandSidebar={() => setSidebarCollapsed(false)}
           sidebarCollapsed={sidebarCollapsed}
+          mobileMenuButtonRef={mobileMenuBtnRef}
         />
 
         {/* Screening notice */}
         <div
-          className="bg-white/80 border-b border-[#E2E8F0] px-4 py-1.5"
+          className="bg-white/90 border-b border-[#E2E8F0] px-3 sm:px-4 py-2"
           style={{ backdropFilter: 'blur(8px)' }}
         >
-          <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-3 text-xs text-[#64748B]">
-            <div className="flex items-center gap-2 min-w-0">
-              <AlertTriangle className="w-3.5 h-3.5 text-[#F59E0B] flex-shrink-0" />
-              <span className="leading-snug truncate">
+          <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-1.5 md:gap-3 text-xs text-[#475569]">
+            <div className="flex items-start sm:items-center gap-2 min-w-0">
+              <AlertTriangle className="w-3.5 h-3.5 text-[#D97706] flex-shrink-0 mt-0.5 sm:mt-0" />
+              <span className="leading-relaxed">
                 <strong className="text-[#10223D] font-semibold">Decision-Support Platform:</strong>{' '}
                 30 m basin runoff &amp; mitigation planning. Cross-verify operational alerts with official PMD &amp; NDMA bulletins.
               </span>
             </div>
-            <span className="hidden md:inline-block font-mono text-[10px] px-2 py-0.5 rounded-full bg-[#F1F6FB] border border-[#E2E8F0] text-[#64748B] flex-shrink-0 whitespace-nowrap">
+            <span className="self-start md:self-auto font-mono text-[10px] px-2 py-0.5 rounded-full bg-[#F1F6FB] border border-[#E2E8F0] text-[#64748B] flex-shrink-0 whitespace-nowrap">
               Rawalpindi–Islamabad · 33.65°N 73.06°E
             </span>
           </div>
