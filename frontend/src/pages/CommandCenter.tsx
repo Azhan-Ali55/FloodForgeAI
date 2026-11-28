@@ -76,17 +76,6 @@ function LocationScenery() {
         <path d="M200 85 L230 65 L260 75 L290 60 L320 68 L320 90 L200 90Z"
           fill="#6B9E6B" opacity="0.45" />
 
-        {/* Faisal Mosque silhouette */}
-        <g opacity="0.22" transform="translate(230, 22)">
-          <path d="M22 46 L22 18 Q22 6 28 6 Q34 6 34 18 L34 46Z" fill="#12345B" />
-          <path d="M18 18 Q28 2 38 18Z" fill="#12345B" />
-          <rect x="10" y="26" width="4" height="22" fill="#12345B" />
-          <polygon points="12,26 10,32 14,32" fill="#12345B" />
-          <rect x="42" y="26" width="4" height="22" fill="#12345B" />
-          <polygon points="44,26 42,32 46,32" fill="#12345B" />
-          <rect x="14" y="46" width="28" height="3" fill="#12345B" />
-        </g>
-
         {/* Nullah Lai water */}
         <path
           d="M140 82 Q180 78 220 82 Q260 86 300 82 Q310 81 320 82 L320 90 L140 90Z"

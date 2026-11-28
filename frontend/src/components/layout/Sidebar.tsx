@@ -98,20 +98,6 @@ function IslamabadLandscape() {
       <rect x="206" y="77" width="2" height="7" fill="#0A4A30" opacity="0.65" />
       <ellipse cx="207" cy="75" rx="4" ry="5" fill="#0A4A30" opacity="0.6" />
 
-      {/* Mosque silhouette (Faisal Mosque simplified) */}
-      <g opacity="0.35" transform="translate(96, 46)">
-        {/* Main dome */}
-        <path d="M14 24 L14 10 Q14 2 18 2 Q22 2 22 10 L22 24Z" fill="#C8D8E8" />
-        <path d="M12 10 Q18 0 24 10Z" fill="#C8D8E8" />
-        {/* Minarets */}
-        <rect x="6" y="14" width="3" height="12" fill="#C8D8E8" />
-        <polygon points="7.5,14 6,18 9,18" fill="#C8D8E8" />
-        <rect x="27" y="14" width="3" height="12" fill="#C8D8E8" />
-        <polygon points="28.5,14 27,18 30,18" fill="#C8D8E8" />
-        {/* Base */}
-        <rect x="8" y="24" width="20" height="2" fill="#C8D8E8" />
-      </g>
-
       {/* Sky overlay */}
       <rect x="0" y="0" width="220" height="100" fill="url(#skyGrad)" />
     </svg>
