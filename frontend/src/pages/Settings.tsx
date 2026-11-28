@@ -77,19 +77,19 @@ export function Settings() {
             className={cn(
               'p-3.5 rounded-sm border text-left transition-colors cursor-pointer',
               engineMode === 'local'
-                ? 'bg-[#EEF3FA] border-[#173C79]'
-                : 'bg-[#F5F6F7] border-[#D6DCE4] hover:border-[#244D8F]'
+                ? 'bg-[#EEF3FA] border-[#12345B]'
+                : 'bg-[#F1F6FB] border-[#E2E8F0] hover:border-[#12345B]'
             )}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#173C79]">
+              <span className="text-xs font-bold text-[#12345B]">
                 In-Browser Mode
               </span>
               {engineMode === 'local' && (
                 <CheckCircle2 className="w-4 h-4 text-[#55A85F]" />
               )}
             </div>
-            <p className="text-[11px] text-[#5A6A7E] mt-1 leading-relaxed">
+            <p className="text-[11px] text-[#64748B] mt-1 leading-relaxed">
               Runs flood simulation and investment planning locally in the browser without external server dependency.
             </p>
           </button>
@@ -100,26 +100,26 @@ export function Settings() {
             className={cn(
               'p-3.5 rounded-sm border text-left transition-colors cursor-pointer',
               engineMode === 'api'
-                ? 'bg-[#EEF3FA] border-[#173C79]'
-                : 'bg-[#F5F6F7] border-[#D6DCE4] hover:border-[#244D8F]'
+                ? 'bg-[#EEF3FA] border-[#12345B]'
+                : 'bg-[#F1F6FB] border-[#E2E8F0] hover:border-[#12345B]'
             )}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#173C79]">
+              <span className="text-xs font-bold text-[#12345B]">
                 Connected Analytics Server
               </span>
               {engineMode === 'api' && (
                 <CheckCircle2 className="w-4 h-4 text-[#55A85F]" />
               )}
             </div>
-            <p className="text-[11px] text-[#5A6A7E] mt-1 leading-relaxed">
+            <p className="text-[11px] text-[#64748B] mt-1 leading-relaxed">
               Uses the dedicated FloodForge calculation server with automatic browser fallback if unavailable.
             </p>
           </button>
         </div>
 
         <div className="space-y-1.5 pt-2">
-          <label htmlFor="server-connection-address" className="text-xs font-semibold text-[#26364A]">
+          <label htmlFor="server-connection-address" className="text-xs font-semibold text-[#10223D]">
             Server Connection Address
           </label>
           <div className="flex flex-col sm:flex-row gap-2">
@@ -130,20 +130,20 @@ export function Settings() {
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
               placeholder="https://your-floodforge-api.example.com"
-              className="flex-1 px-3 py-2 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] font-mono text-xs text-[#26364A]"
+              className="flex-1 px-3 py-2 rounded-sm bg-[#F1F6FB] border border-[#E2E8F0] font-mono text-xs text-[#10223D]"
             />
             <button
               type="button"
               onClick={handleCheck}
               disabled={checking}
-              className="px-4 py-2 rounded-sm bg-[#173C79] hover:bg-[#244D8F] text-white font-semibold text-xs uppercase tracking-wider cursor-pointer"
+              className="px-4 py-2 rounded-sm bg-[#12345B] hover:bg-[#12345B] text-white font-semibold text-xs uppercase tracking-wider cursor-pointer"
             >
               {checking ? 'Checking...' : 'Check Server Connection'}
             </button>
           </div>
-          <p className="text-[11px] text-[#5A6A7E]">
-            Admin Service Endpoints: <code className="font-mono text-[#173C79]">/api/simulate</code> (Run Flood Simulation) ·{' '}
-            <code className="font-mono text-[#173C79]">/api/optimize</code> (Run Budget Optimization)
+          <p className="text-[11px] text-[#64748B]">
+            Admin Service Endpoints: <code className="font-mono text-[#12345B]">/api/simulate</code> (Run Flood Simulation) ·{' '}
+            <code className="font-mono text-[#12345B]">/api/optimize</code> (Run Budget Optimization)
           </p>
         </div>
       </MunicipalPanel>
@@ -156,8 +156,8 @@ export function Settings() {
       >
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs text-[#5A6A7E] leading-relaxed">
-              <strong className="text-[#173C79]">Demonstration control only (not connected to official PMD / NDMA systems).</strong> By default, the <strong className="text-[#D94343]">Emergency</strong> alert tier is locked in screening mode. Toggle only for tabletop drills or UI simulations — no real public evacuation directives are issued.
+            <p className="text-xs text-[#64748B] leading-relaxed">
+              <strong className="text-[#12345B]">Demonstration control only (not connected to official PMD / NDMA systems).</strong> By default, the <strong className="text-[#D94343]">Emergency</strong> alert tier is locked in screening mode. Toggle only for tabletop drills or UI simulations — no real public evacuation directives are issued.
             </p>
           </div>
 
@@ -180,7 +180,7 @@ export function Settings() {
         icon={<Trash2 className="w-4 h-4" />}
         bodyClassName="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
       >
-        <p className="text-xs text-[#5A6A7E]">
+        <p className="text-xs text-[#64748B]">
           Clear cached Open-Meteo hourly forecast responses stored in browser localStorage.
         </p>
         <button

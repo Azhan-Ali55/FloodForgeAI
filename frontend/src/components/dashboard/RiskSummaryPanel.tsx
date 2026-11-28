@@ -109,8 +109,8 @@ export const RiskSummaryPanel = React.memo(function RiskSummaryPanel({
       </div>
 
       {/* 4 Core Quantitative Flood Risk Metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F8FAFC]">
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F1F6FB]">
           <div className="flex items-center justify-between text-[11px] font-medium text-[#64748B]">
             <span>Flooded Area</span>
             <Waves className="w-3.5 h-3.5 text-[#0F766E]" />
@@ -120,7 +120,7 @@ export const RiskSummaryPanel = React.memo(function RiskSummaryPanel({
           </div>
         </div>
 
-        <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F8FAFC]">
+        <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F1F6FB]">
           <div className="flex items-center justify-between text-[11px] font-medium text-[#64748B]">
             <span>Est. Population</span>
             <Users className="w-3.5 h-3.5 text-[#1D4ED8]" />
@@ -130,7 +130,7 @@ export const RiskSummaryPanel = React.memo(function RiskSummaryPanel({
           </div>
         </div>
 
-        <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F8FAFC]">
+        <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F1F6FB]">
           <div className="flex items-center justify-between text-[11px] font-medium text-[#64748B]">
             <span>Structures</span>
             <Building2 className="w-3.5 h-3.5 text-[#EA580C]" />
@@ -140,7 +140,7 @@ export const RiskSummaryPanel = React.memo(function RiskSummaryPanel({
           </div>
         </div>
 
-        <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F8FAFC]">
+        <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F1F6FB]">
           <div className="flex items-center justify-between text-[11px] font-medium text-[#64748B]">
             <span>Critical Sites</span>
             <ShieldAlert className="w-3.5 h-3.5 text-[#DC2626]" />
@@ -166,7 +166,7 @@ export const RiskSummaryPanel = React.memo(function RiskSummaryPanel({
                 key={st.id}
                 type="button"
                 onClick={() => onSelectStation(st.id)}
-                className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-md border border-[#E2E8F0] bg-[#FFFFFF] hover:bg-[#F8FAFC] text-left text-xs cursor-pointer transition-colors"
+                className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-md border border-[#E2E8F0] bg-[#FFFFFF] hover:bg-[#F1F6FB] text-left text-xs cursor-pointer transition-colors"
               >
                 <span className="flex items-center gap-1.5 min-w-0 font-medium text-[#0F172A]">
                   <MapPin className="w-3.5 h-3.5 text-[#EA580C] flex-shrink-0" />
@@ -179,7 +179,7 @@ export const RiskSummaryPanel = React.memo(function RiskSummaryPanel({
             ))}
           </div>
         ) : (
-          <div className="px-3 py-2 rounded-md border border-[#E2E8F0] bg-[#F8FAFC] text-xs text-[#475569]">
+          <div className="px-3 py-2 rounded-md border border-[#E2E8F0] bg-[#F1F6FB] text-xs text-[#475569]">
             {isLiveOperationalVerified
               ? 'No basin monitoring stations exceed the modeled runoff warning threshold.'
               : 'Monitoring station exceedance requires a verified or simulated rainfall run.'}

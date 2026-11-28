@@ -6,7 +6,7 @@
  */
 export const FF_TOKENS = {
   colors: {
-    canvas: '#F8FAFC',
+    canvas: '#F1F6FB',
     surface: '#FFFFFF',
     surfaceMuted: '#F1F5F9',
     border: '#E2E8F0',

@@ -51,7 +51,7 @@ export const RiskAlertsPanel = React.memo(function RiskAlertsPanel({
         <button
           type="button"
           onClick={() => void onEnableNotifications()}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-[11px] font-medium text-[#0F172A] cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#E2E8F0] bg-[#F1F6FB] hover:bg-[#F1F5F9] text-[11px] font-medium text-[#0F172A] cursor-pointer"
         >
           <Bell className="w-3.5 h-3.5 text-[#0F766E]" />
           {browserAlertsEnabled ? 'Session Alerts On' : 'Enable Alerts'}

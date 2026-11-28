@@ -13,7 +13,7 @@ export function Reports() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-[#D6DCE4] rounded p-2 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+      <div className="bg-white border border-[#E2E8F0] rounded p-2 flex flex-wrap items-center justify-between gap-2 shadow-xs">
         <div className="flex flex-wrap items-center gap-1.5">
           {(
             [
@@ -32,8 +32,8 @@ export function Reports() {
                 className={cn(
                   'flex items-center gap-2 px-3 py-1.5 rounded-sm text-xs font-semibold transition-colors cursor-pointer',
                   active
-                    ? 'bg-[#173C79] text-white'
-                    : 'text-[#26364A] hover:bg-[#F5F6F7]'
+                    ? 'bg-[#12345B] text-white'
+                    : 'text-[#10223D] hover:bg-[#F1F6FB]'
                 )}
               >
                 <Icon className="w-3.5 h-3.5" />

@@ -252,10 +252,10 @@ export function FloodPrediction({
             </div>
           }
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#5A6A7E] mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#64748B] mb-2">
             <span>
               Peak 6h window:{' '}
-              <strong className="text-[#173C79] font-mono">
+              <strong className="text-[#12345B] font-mono">
                 {(() => {
                   const slice = weather.hourlyForecast.slice(0, forecastHorizon);
                   let best = 0;
@@ -276,8 +276,8 @@ export function FloodPrediction({
                 })()}
               </strong>{' '}
               · {forecastHorizon}h total:{' '}
-              <strong className="font-mono text-[#26364A]">{horizonTotalMm.toFixed(1)} mm</strong> · Peak hourly:{' '}
-              <strong className="font-mono text-[#26364A]">{weather.peakHourlyMm} mm/h</strong>
+              <strong className="font-mono text-[#10223D]">{horizonTotalMm.toFixed(1)} mm</strong> · Peak hourly:{' '}
+              <strong className="font-mono text-[#10223D]">{weather.peakHourlyMm} mm/h</strong>
             </span>
             <div className="flex items-center gap-2">
               {monsoonStressMode && (
@@ -314,15 +314,15 @@ export function FloodPrediction({
                 <CartesianGrid strokeDasharray="3 3" stroke="#E6EAEF" vertical={false} />
                 <XAxis
                   dataKey="label"
-                  tick={{ fill: '#5A6A7E', fontSize: 10 }}
+                  tick={{ fill: '#64748B', fontSize: 10 }}
                   interval={forecastHorizon === 24 ? 2 : forecastHorizon === 48 ? 5 : 8}
                 />
-                <YAxis yAxisId="left" tick={{ fill: '#5A6A7E', fontSize: 10 }} unit="mm" />
+                <YAxis yAxisId="left" tick={{ fill: '#64748B', fontSize: 10 }} unit="mm" />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
                   domain={[0, 100]}
-                  tick={{ fill: '#5A6A7E', fontSize: 10 }}
+                  tick={{ fill: '#64748B', fontSize: 10 }}
                   unit="%"
                 />
                 <Tooltip contentStyle={{ fontSize: 12, borderColor: '#CBD5E1' }} />
@@ -330,7 +330,7 @@ export function FloodPrediction({
                   yAxisId="left"
                   dataKey="precipitationMm"
                   name="Precipitation (mm)"
-                  fill="#244D8F"
+                  fill="#12345B"
                   radius={[2, 2, 0, 0]}
                 />
                 <Line
@@ -362,8 +362,8 @@ export function FloodPrediction({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={weather.past7DaysDaily}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E6EAEF" vertical={false} />
-                <XAxis dataKey="day" tick={{ fill: '#5A6A7E', fontSize: 9 }} />
-                <YAxis tick={{ fill: '#5A6A7E', fontSize: 9 }} width={28} />
+                <XAxis dataKey="day" tick={{ fill: '#64748B', fontSize: 9 }} />
+                <YAxis tick={{ fill: '#64748B', fontSize: 9 }} width={28} />
                 <Tooltip contentStyle={{ fontSize: 11, borderColor: '#CBD5E1' }} />
                 <Bar
                   dataKey="rainfallMm"
@@ -376,7 +376,7 @@ export function FloodPrediction({
           </div>
 
           <div className="space-y-2 pt-2 border-t border-[#E6EAEF]">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#5A6A7E]">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
               Vadose Soil Moisture (Open-Meteo Land Cell)
             </div>
             {[
@@ -388,21 +388,21 @@ export function FloodPrediction({
               return (
                 <div key={sm.label} className="space-y-1">
                   <div className="flex justify-between text-[11px]">
-                    <span className="text-[#5A6A7E]">{sm.label}</span>
-                    <span className="font-mono font-semibold text-[#26364A]">
+                    <span className="text-[#64748B]">{sm.label}</span>
+                    <span className="font-mono font-semibold text-[#10223D]">
                       {sm.val.toFixed(3)} m³/m³
                     </span>
                   </div>
                   <div className="h-1.5 rounded-full bg-[#E6EAEF] overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-[#173C79]"
+                      className="h-full rounded-full bg-[#12345B]"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
                 </div>
               );
             })}
-            <p className="text-[10px] text-[#5A6A7E] leading-snug pt-1">
+            <p className="text-[10px] text-[#64748B] leading-snug pt-1">
               Soil moisture adjusts pervious cells only; paved urban cells remain invariant.
             </p>
           </div>
@@ -425,7 +425,7 @@ export function FloodPrediction({
                 'px-2.5 py-1 rounded text-xs font-medium border transition-colors cursor-pointer',
                 monsoonStressMode
                   ? 'bg-[#EA580C] border-[#EA580C] text-white'
-                  : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A] hover:bg-[#F1F5F9]'
+                  : 'bg-[#F1F6FB] border-[#CBD5E1] text-[#0F172A] hover:bg-[#F1F5F9]'
               )}
             >
               {monsoonStressMode ? 'Exit Monsoon Test' : 'Test 30-Day Monsoon Surge'}
@@ -456,7 +456,7 @@ export function FloodPrediction({
               <span>No flood-triggering rainfall (&gt;35 mm/day) detected in the next 30 days.</span>
             </div>
           )}
-          <span className="text-[11px] text-[#5A6A7E]">
+          <span className="text-[11px] text-[#64748B]">
             Click any bar to run the 30 m D8 flood simulation for that future date.
           </span>
         </div>
@@ -514,7 +514,7 @@ export function FloodPrediction({
         >
           <form onSubmit={handleRunSimulation} noValidate className="space-y-4">
             <div className="space-y-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#5A6A7E]">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
                 Deterministic Stress Presets
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -533,7 +533,7 @@ export function FloodPrediction({
                         label: p.name,
                       }))
                     }
-                    className="px-2.5 py-1 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] hover:border-[#173C79] text-[11px] font-medium text-[#26364A] cursor-pointer transition-colors"
+                    className="px-2.5 py-1 rounded-sm bg-[#F1F6FB] border border-[#E2E8F0] hover:border-[#12345B] text-[11px] font-medium text-[#10223D] cursor-pointer transition-colors"
                   >
                     {p.name}
                   </button>
@@ -543,8 +543,8 @@ export function FloodPrediction({
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
-                <label className="text-[#5A6A7E] font-medium">Rainfall Intensity (mm/hr)</label>
-                <span className="font-mono text-[#173C79] font-semibold">
+                <label className="text-[#64748B] font-medium">Rainfall Intensity (mm/hr)</label>
+                <span className="font-mono text-[#12345B] font-semibold">
                   {simScenario.rainfall_mm_per_hr} mm/hr (Total:{' '}
                   {(
                     simScenario.rainfall_mm_per_hr *
@@ -580,15 +580,15 @@ export function FloodPrediction({
                       rainfall_mm_per_hr: Number(e.target.value),
                     }))
                   }
-                  className="w-20 px-2 py-1 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] font-mono text-xs text-[#26364A]"
+                  className="w-20 px-2 py-1 rounded-sm bg-[#F1F6FB] border border-[#E2E8F0] font-mono text-xs text-[#10223D]"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
-                <label className="text-[#5A6A7E] font-medium">Storm Duration (hours)</label>
-                <span className="font-mono font-semibold text-[#26364A]">
+                <label className="text-[#64748B] font-medium">Storm Duration (hours)</label>
+                <span className="font-mono font-semibold text-[#10223D]">
                   {simScenario.duration_hr} hr
                 </span>
               </div>
@@ -619,14 +619,14 @@ export function FloodPrediction({
                       duration_hr: Number(e.target.value),
                     }))
                   }
-                  className="w-20 px-2 py-1 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] font-mono text-xs text-[#26364A]"
+                  className="w-20 px-2 py-1 rounded-sm bg-[#F1F6FB] border border-[#E2E8F0] font-mono text-xs text-[#10223D]"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-medium text-[#5A6A7E]">Antecedent Wetness</label>
+                <label className="text-xs font-medium text-[#64748B]">Antecedent Wetness</label>
                 <select
                   value={simScenario.antecedent_wetness ?? 'normal'}
                   onChange={(e) =>
@@ -635,7 +635,7 @@ export function FloodPrediction({
                       antecedent_wetness: e.target.value as AntecedentWetnessLevel,
                     }))
                   }
-                  className="w-full px-2.5 py-2 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] text-xs text-[#26364A]"
+                  className="w-full px-2.5 py-2 rounded-sm bg-[#F1F6FB] border border-[#E2E8F0] text-xs text-[#10223D]"
                 >
                   <option value="dry">Dry (Low API₇)</option>
                   <option value="normal">Normal Basin Moisture</option>
@@ -645,7 +645,7 @@ export function FloodPrediction({
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-medium text-[#5A6A7E]">Scenario Classification</label>
+                <label className="text-xs font-medium text-[#64748B]">Scenario Classification</label>
                 <select
                   value={simScenario.tag}
                   onChange={(e) => {
@@ -657,7 +657,7 @@ export function FloodPrediction({
                         tag === 'UNCERTAINTY_ENVELOPE' ? 1.25 : 1.0,
                     }));
                   }}
-                  className="w-full px-2.5 py-2 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] text-xs text-[#26364A]"
+                  className="w-full px-2.5 py-2 rounded-sm bg-[#F1F6FB] border border-[#E2E8F0] text-xs text-[#10223D]"
                 >
                   <option value="HYPOTHETICAL_STRESS_TEST">Hypothetical Stress Test</option>
                   <option value="UNCERTAINTY_ENVELOPE">Uncertainty Envelope (+25%)</option>
@@ -672,14 +672,14 @@ export function FloodPrediction({
               </div>
             )}
 
-            <div className="p-2 rounded-sm bg-[#EEF3FA] border border-[#173C79]/25 text-[11px] text-[#173C79] leading-snug">
+            <div className="p-2 rounded-sm bg-[#EEF3FA] border border-[#12345B]/25 text-[11px] text-[#12345B] leading-snug">
               30 m D8 runoff routing across the 200×200 DEM grid.
             </div>
 
             <button
               type="submit"
               disabled={isSimulating}
-              className="w-full py-2.5 px-4 rounded-sm bg-[#173C79] hover:bg-[#244D8F] disabled:opacity-60 text-white font-semibold text-xs tracking-wider uppercase flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-sm bg-[#12345B] hover:bg-[#12345B] disabled:opacity-60 text-white font-semibold text-xs tracking-wider uppercase flex items-center justify-center gap-2 transition-colors cursor-pointer"
             >
               {isSimulating ? (
                 <>
@@ -712,7 +712,7 @@ export function FloodPrediction({
                     actions: preparednessActions,
                   })
                 }
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0F172A] text-xs font-medium cursor-pointer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#F1F6FB] hover:bg-[#F1F5F9] border border-[#CBD5E1] text-[#0F172A] text-xs font-medium cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5 text-[#0F766E]" />
                 Export Report
@@ -728,7 +728,7 @@ export function FloodPrediction({
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-[#D6DCE4] bg-[#F5F6F7] text-[10px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
+                <tr className="border-b border-[#E2E8F0] bg-[#F1F6FB] text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">
                   <th className="py-2 px-2.5">Exposure Indicator</th>
                   <th className="py-2 px-3 text-right">Operational Baseline</th>
                   <th className="py-2 px-3 text-right">Simulated Scenario</th>
@@ -740,18 +740,18 @@ export function FloodPrediction({
                   const Icon = row.icon;
                   const isIncrease = row.delta.startsWith('+');
                   return (
-                    <tr key={row.label} className="hover:bg-[#F5F6F7]/70">
-                      <td className="py-2.5 px-2.5 font-medium text-[#26364A] flex items-center gap-2">
-                        <Icon className="w-3.5 h-3.5 text-[#173C79]" />
+                    <tr key={row.label} className="hover:bg-[#F1F6FB]/70">
+                      <td className="py-2.5 px-2.5 font-medium text-[#10223D] flex items-center gap-2">
+                        <Icon className="w-3.5 h-3.5 text-[#12345B]" />
                         <span>{row.label}</span>
-                        <span className="text-[10px] font-mono text-[#5A6A7E]">
+                        <span className="text-[10px] font-mono text-[#64748B]">
                           ({row.unit})
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-[#5A6A7E]">
+                      <td className="py-2.5 px-3 text-right font-mono text-[#64748B]">
                         {row.before}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-[#26364A]">
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-[#10223D]">
                         {row.after}
                       </td>
                       <td
@@ -771,10 +771,10 @@ export function FloodPrediction({
 
           <div className="space-y-2 pt-2 border-t border-[#E6EAEF]">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-[#173C79]">
+              <span className="font-semibold text-[#12345B]">
                 Critical Facilities Within Modeled Risk Mask ({exposedFacilityList.length})
               </span>
-              <span className="text-[10px] font-mono text-[#5A6A7E]">
+              <span className="text-[10px] font-mono text-[#64748B]">
                 &ge; {simScenario.threshold_mm ?? 50} mm runoff proxy
               </span>
             </div>
@@ -790,8 +790,8 @@ export function FloodPrediction({
                     className="p-2 rounded-sm bg-[#FBEBEB]/60 border border-[#D94343]/40 flex items-center justify-between gap-2 text-xs"
                   >
                     <div className="min-w-0">
-                      <div className="font-semibold text-[#26364A] truncate">{f.name}</div>
-                      <div className="text-[10px] font-mono text-[#5A6A7E] truncate">
+                      <div className="font-semibold text-[#10223D] truncate">{f.name}</div>
+                      <div className="text-[10px] font-mono text-[#64748B] truncate">
                         {f.zoneName}
                       </div>
                     </div>
@@ -807,10 +807,10 @@ export function FloodPrediction({
           {/* Before-the-Storm Preparedness Action List */}
           <div className="space-y-2 pt-2 border-t border-[#E6EAEF]">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-[#173C79]">
+              <span className="font-semibold text-[#12345B]">
                 Before-the-Storm Preparedness Action List
               </span>
-              <span className="text-[10px] font-mono text-[#5A6A7E]">
+              <span className="text-[10px] font-mono text-[#64748B]">
                 Derived from modeled exposure
               </span>
             </div>
@@ -821,9 +821,9 @@ export function FloodPrediction({
                   className={cn(
                     'p-2 rounded-sm border text-[11px] flex items-start gap-2',
                     act.priority === 'HIGH'
-                      ? 'bg-[#FBEBEB]/60 border-[#D94343]/40 text-[#26364A]'
+                      ? 'bg-[#FBEBEB]/60 border-[#D94343]/40 text-[#10223D]'
                       : act.priority === 'MEDIUM'
-                        ? 'bg-[#FDF1E7]/70 border-[#EF8735]/40 text-[#26364A]'
+                        ? 'bg-[#FDF1E7]/70 border-[#EF8735]/40 text-[#10223D]'
                         : 'bg-[#EDF7EE] border-[#55A85F]/40 text-[#2F6F37]'
                   )}
                 >
@@ -845,7 +845,7 @@ export function FloodPrediction({
             </div>
           </div>
 
-          <div className="p-3 rounded-sm bg-[#FEF9E7] border border-[#E0B422]/60 flex items-start gap-2.5 text-[11px] text-[#26364A]">
+          <div className="p-3 rounded-sm bg-[#FEF9E7] border border-[#E0B422]/60 flex items-start gap-2.5 text-[11px] text-[#10223D]">
             <AlertTriangle className="w-4 h-4 text-[#EF8735] flex-shrink-0 mt-0.5" />
             <div className="leading-relaxed">
               <strong className="text-[#8A6700]">

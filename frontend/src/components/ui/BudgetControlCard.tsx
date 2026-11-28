@@ -26,7 +26,7 @@ export function BudgetControlCard({
   const clamped = Math.min(300_000_000, Math.max(50_000_000, budgetPkr));
 
   return (
-    <div className={cn('p-3 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] space-y-2', className)}>
+    <div className={cn('p-3 rounded-md bg-[#F1F6FB] border border-[#E2E8F0] space-y-2', className)}>
       <div className="flex items-center justify-between text-xs gap-2">
         <label htmlFor={inputId} className="font-semibold text-[#0F172A]">
           Budget Slider (PKR 50M → 300M)
@@ -83,9 +83,9 @@ export function BudgetControlCard({
               }
             }}
             onBlur={(e) => onBudgetChange(Number(e.target.value) || 50_000_000)}
-            className="flex-1 px-2.5 py-1.5 rounded-sm bg-white border border-[#D6DCE4] font-mono text-xs text-[#26364A]"
+            className="flex-1 px-2.5 py-1.5 rounded-sm bg-white border border-[#E2E8F0] font-mono text-xs text-[#10223D]"
           />
-          <span className="text-[11px] font-mono text-[#5A6A7E]">PKR</span>
+          <span className="text-[11px] font-mono text-[#64748B]">PKR</span>
         </div>
       )}
     </div>

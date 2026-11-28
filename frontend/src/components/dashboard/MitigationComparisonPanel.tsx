@@ -134,7 +134,7 @@ export const MitigationComparisonPanel = React.memo(function MitigationCompariso
               'py-1 px-1 rounded border font-medium truncate',
               item.done
                 ? 'bg-[#F0FDFA] border-[#99F6E4] text-[#0F766E]'
-                : 'bg-[#F8FAFC] border-[#E2E8F0] text-[#64748B]'
+                : 'bg-[#F1F6FB] border-[#E2E8F0] text-[#64748B]'
             )}
           >
             {item.step}
@@ -213,7 +213,7 @@ export const MitigationComparisonPanel = React.memo(function MitigationCompariso
           <div className="rounded-md border border-[#E2E8F0] overflow-hidden">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
-                <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[11px] font-semibold text-[#64748B]">
+                <tr className="bg-[#F1F6FB] border-b border-[#E2E8F0] text-[11px] font-semibold text-[#64748B]">
                   <th className="py-1.5 px-2.5">Metric</th>
                   <th className="py-1.5 px-2 text-right">Before</th>
                   <th className="py-1.5 px-2 text-right">After</th>
@@ -236,7 +236,7 @@ export const MitigationComparisonPanel = React.memo(function MitigationCompariso
           </div>
 
           {/* Dynamic Optimization Metrics (Zero hardcoded Pareto label) */}
-          <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F8FAFC] space-y-1 text-xs">
+          <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F1F6FB] space-y-1 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-[#475569] flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-[#0F766E]" />

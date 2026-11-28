@@ -41,8 +41,8 @@ const FLOOD_STOPS: Array<[number, [number, number, number, number]]> = [
 const RAINFALL_STOPS: Array<[number, [number, number, number, number]]> = [
   [0.0, [240, 244, 248, 20]],
   [0.35, [85, 168, 95, 110]],
-  [0.7, [36, 77, 143, 155]],   // #244D8F Secondary Blue
-  [1.0, [23, 60, 121, 195]],   // #173C79 Primary Navy Blue
+  [0.7, [36, 77, 143, 155]],   // #12345B Secondary Blue
+  [1.0, [23, 60, 121, 195]],   // #12345B Primary Navy Blue
 ];
 
 const DEM_STOPS: Array<[number, [number, number, number, number]]> = [

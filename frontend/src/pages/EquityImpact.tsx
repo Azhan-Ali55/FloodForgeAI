@@ -79,7 +79,7 @@ export function EquityImpact() {
 
   if (!optResult) {
     return (
-      <PanelCard className="p-8 text-center text-sm text-[#5A6A7E]">
+      <PanelCard className="p-8 text-center text-sm text-[#64748B]">
         Run an optimization portfolio first in Mitigation Optimizer to generate equity and risk-transfer diagnostics.
       </PanelCard>
     );
@@ -98,7 +98,7 @@ export function EquityImpact() {
         title="Neighborhood Equity & Impact Assessment"
         subtitle="Before-and-after exposure comparison and downstream risk-transfer audit across Islamabad & Rawalpindi."
         rightSlot={
-          <div className="flex items-center gap-2 text-xs font-mono text-[#173C79]">
+          <div className="flex items-center gap-2 text-xs font-mono text-[#12345B]">
             <Scale className="w-4 h-4" />
             <span>{optResult.zoneEquityRows.length} Basin Zones Audited</span>
           </div>
@@ -125,16 +125,16 @@ export function EquityImpact() {
           return (
             <PanelCard key={m.label} className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">
                   {m.label}
                 </span>
-                <Icon className="w-4 h-4 text-[#173C79]" />
+                <Icon className="w-4 h-4 text-[#12345B]" />
               </div>
 
               <div className="flex items-baseline justify-between gap-2">
                 <div>
-                  <div className="text-[10px] font-mono text-[#5A6A7E]">Baseline</div>
-                  <div className="text-sm font-mono text-[#26364A]">
+                  <div className="text-[10px] font-mono text-[#64748B]">Baseline</div>
+                  <div className="text-sm font-mono text-[#10223D]">
                     {m.decimals > 0
                       ? m.baseVal.toFixed(m.decimals)
                       : formatNumber(m.baseVal)}
@@ -143,12 +143,12 @@ export function EquityImpact() {
                 <ArrowDownRight
                   className={cn(
                     'w-4 h-4',
-                    improved ? 'text-[#55A85F]' : 'text-[#5A6A7E]'
+                    improved ? 'text-[#55A85F]' : 'text-[#64748B]'
                   )}
                 />
                 <div className="text-right">
-                  <div className="text-[10px] font-mono text-[#5A6A7E]">Optimized</div>
-                  <div className="text-base font-bold font-mono text-[#173C79]">
+                  <div className="text-[10px] font-mono text-[#64748B]">Optimized</div>
+                  <div className="text-base font-bold font-mono text-[#12345B]">
                     {m.decimals > 0
                       ? m.optVal.toFixed(m.decimals)
                       : formatNumber(m.optVal)}
@@ -157,7 +157,7 @@ export function EquityImpact() {
               </div>
 
               <div className="pt-2 border-t border-[#E6EAEF] flex items-center justify-between text-[11px] font-mono">
-                <span className="text-[#5A6A7E]">
+                <span className="text-[#64748B]">
                   {m.diff > 0 ? '+' : ''}
                   {m.decimals > 0 ? m.diff.toFixed(m.decimals) : formatNumber(m.diff)} {m.unit}
                 </span>
@@ -191,12 +191,12 @@ export function EquityImpact() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#E6EAEF" vertical={false} />
                 <XAxis
                   dataKey="zone"
-                  tick={{ fill: '#5A6A7E', fontSize: 10 }}
+                  tick={{ fill: '#64748B', fontSize: 10 }}
                   angle={-18}
                   textAnchor="end"
                   height={54}
                 />
-                <YAxis tick={{ fill: '#5A6A7E', fontSize: 10 }} unit=" km²" />
+                <YAxis tick={{ fill: '#64748B', fontSize: 10 }} unit=" km²" />
                 <Tooltip contentStyle={{ fontSize: 12, borderColor: '#CBD5E1' }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Bar dataKey="baseline" name="Baseline (km²)" fill="#EF8735" radius={[2, 2, 0, 0]} />
@@ -212,27 +212,27 @@ export function EquityImpact() {
           className="xl:col-span-4"
           bodyClassName="p-4 flex flex-col justify-between gap-4"
         >
-          <ul className="space-y-2 text-xs text-[#26364A] leading-relaxed list-disc pl-4">
+          <ul className="space-y-2 text-xs text-[#10223D] leading-relaxed list-disc pl-4">
             <li>
               Prevents upstream Islamabad drainage upgrades from shifting flood peaks into downstream Rawalpindi wards.
             </li>
-            <li className="text-[#5A6A7E]">
+            <li className="text-[#64748B]">
               Each zone is audited independently against a strict 2% downstream building exposure tolerance.
             </li>
           </ul>
 
-          <div className="p-3 rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] space-y-1.5 text-xs">
-            <div className="font-semibold text-[10px] uppercase tracking-wider text-[#5A6A7E]">
+          <div className="p-3 rounded-sm bg-[#F1F6FB] border border-[#E2E8F0] space-y-1.5 text-xs">
+            <div className="font-semibold text-[10px] uppercase tracking-wider text-[#64748B]">
               Audit Summary
             </div>
             <div className="flex justify-between">
-              <span className="text-[#5A6A7E]">Wards with Modeled Reduction</span>
+              <span className="text-[#64748B]">Wards with Modeled Reduction</span>
               <span className="font-mono text-[#55A85F] font-bold">
                 {optResult.zoneEquityRows.filter((r) => r.status === 'REDUCTION').length}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#5A6A7E]">No Significant Change</span>
+              <span className="text-[#64748B]">No Significant Change</span>
               <span className="font-mono text-[#EF8735] font-bold">
                 {
                   optResult.zoneEquityRows.filter(
@@ -242,7 +242,7 @@ export function EquityImpact() {
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#5A6A7E]">Increased Exposure Flagged</span>
+              <span className="text-[#64748B]">Increased Exposure Flagged</span>
               <span className="font-mono text-[#D94343] font-bold">
                 {
                   optResult.zoneEquityRows.filter((r) => r.status === 'RISK_INCREASED')
@@ -258,7 +258,7 @@ export function EquityImpact() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[680px]">
             <thead>
-              <tr className="border-b border-[#D6DCE4] bg-[#F5F6F7] text-[10px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
+              <tr className="border-b border-[#E2E8F0] bg-[#F1F6FB] text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">
                 <th className="py-2 px-2.5">Neighborhood / Zone</th>
                 <th className="py-2 px-3">Sector</th>
                 <th className="py-2 px-3 text-right">Baseline Flooded Area</th>
@@ -286,15 +286,15 @@ export function EquityImpact() {
                         };
 
                 return (
-                  <tr key={row.zoneId} className="hover:bg-[#F5F6F7]/70">
-                    <td className="py-2.5 px-2.5 font-semibold text-[#173C79]">
+                  <tr key={row.zoneId} className="hover:bg-[#F1F6FB]/70">
+                    <td className="py-2.5 px-2.5 font-semibold text-[#12345B]">
                       {row.zoneName}
                     </td>
-                    <td className="py-2.5 px-3 text-[#5A6A7E]">{row.sector}</td>
-                    <td className="py-2.5 px-3 text-right font-mono text-[#26364A]">
+                    <td className="py-2.5 px-3 text-[#64748B]">{row.sector}</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-[#10223D]">
                       {row.baselineAreaKm2.toFixed(4)} km²
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-bold text-[#26364A]">
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-[#10223D]">
                       {row.postAreaKm2.toFixed(4)} km²
                     </td>
                     <td

@@ -123,7 +123,7 @@ export const FloodRiskMapPanel = React.memo(function FloodRiskMapPanel({
       />
 
       {mapViewMode === 'compare' && (
-        <div className="px-4 py-2 bg-[#F8FAFC] border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs text-[#334155]">
+        <div className="px-4 py-2 bg-[#F1F6FB] border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs text-[#334155]">
           <span className="flex items-center gap-1.5 font-medium">
             <SlidersHorizontal className="w-3.5 h-3.5 text-[#0F766E]" />
             Left ({compareSplitPct}%): Unmitigated Before · Right ({100 - compareSplitPct}%): Mitigated After ({interventions.length} sites)

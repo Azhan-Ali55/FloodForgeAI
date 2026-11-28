@@ -1,38 +1,73 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 import { useFloodForge } from '../../context/FloodForgeContext';
-import { TopBar } from './TopBar';
+import { cn } from '../../utils/cn';
+import { MobileSidebarDrawer, Sidebar } from './Sidebar';
+import { SlimTopBar } from './TopBar';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { activeToasts, dismissToast } = useFloodForge();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A]">
-      <TopBar />
+    <div
+      className="min-h-screen flex relative"
+      style={{
+        background:
+          'radial-gradient(circle at 18% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 45%), radial-gradient(circle at 92% 14%, rgba(15, 118, 110, 0.06) 0%, transparent 40%), #F1F6FB',
+        color: '#10223D',
+      }}
+    >
+      {/* Desktop sidebar */}
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((v) => !v)}
+      />
 
-      {/* Screening Notice Strip */}
-      <div className="bg-[#FFFFFF] border-b border-[#E2E8F0] px-3 sm:px-5 py-1.5">
-        <div className="max-w-[1760px] mx-auto flex items-center justify-between gap-3 text-xs text-[#475569]">
-          <div className="flex items-start sm:items-center gap-2 min-w-0">
-            <AlertTriangle className="w-3.5 h-3.5 text-[#D97706] flex-shrink-0 mt-0.5 sm:mt-0" />
-            <span className="leading-snug">
-              <strong className="text-[#0F172A] font-semibold">
-                Screening Decision-Support Platform:
-              </strong>{' '}
-              30 m basin runoff &amp; mitigation planning. Cross-verify operational alerts with official PMD &amp; NDMA bulletins.
+      {/* Mobile sidebar drawer */}
+      <MobileSidebarDrawer open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* Main content area */}
+      <div
+        className={cn(
+          'flex-1 flex flex-col min-w-0 transition-all duration-200 ml-0',
+          !sidebarCollapsed && 'lg:ml-56'
+        )}
+      >
+        {/* Slim header bar */}
+        <SlimTopBar
+          onMobileMenuOpen={() => setSidebarOpen(true)}
+          onExpandSidebar={() => setSidebarCollapsed(false)}
+          sidebarCollapsed={sidebarCollapsed}
+        />
+
+        {/* Screening notice */}
+        <div
+          className="bg-white/80 border-b border-[#E2E8F0] px-4 py-1.5"
+          style={{ backdropFilter: 'blur(8px)' }}
+        >
+          <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-3 text-xs text-[#64748B]">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-3.5 h-3.5 text-[#F59E0B] flex-shrink-0" />
+              <span className="leading-snug truncate">
+                <strong className="text-[#10223D] font-semibold">Decision-Support Platform:</strong>{' '}
+                30 m basin runoff &amp; mitigation planning. Cross-verify operational alerts with official PMD &amp; NDMA bulletins.
+              </span>
+            </div>
+            <span className="hidden md:inline-block font-mono text-[10px] px-2 py-0.5 rounded-full bg-[#F1F6FB] border border-[#E2E8F0] text-[#64748B] flex-shrink-0 whitespace-nowrap">
+              Rawalpindi–Islamabad · 33.65°N 73.06°E
             </span>
           </div>
-          <span className="hidden md:inline-block font-mono text-[11px] px-2 py-0.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[#334155] flex-shrink-0">
-            Rawalpindi–Islamabad Basin
-          </span>
         </div>
+
+        {/* Page content */}
+        <main className="flex-1 p-3 sm:p-4 lg:p-5 max-w-[1600px] w-full mx-auto">
+          {children}
+        </main>
       </div>
 
-      <main className="flex-1 p-3 sm:p-4 lg:p-5 max-w-[1760px] w-full mx-auto">
-        {children}
-      </main>
-
-      {/* Floating Municipal Toast Notifications */}
+      {/* Floating toast notifications */}
       {activeToasts.length > 0 && (
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0">
           {activeToasts.map((t) => {
@@ -44,37 +79,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   : Info;
             const borderCls =
               t.severity === 'success'
-                ? 'border-l-4 border-l-[#55A85F]'
+                ? 'border-l-4 border-l-[#059669]'
                 : t.severity === 'warning'
-                  ? 'border-l-4 border-l-[#EF8735]'
+                  ? 'border-l-4 border-l-[#F59E0B]'
                   : t.severity === 'critical'
-                    ? 'border-l-4 border-l-[#D94343]'
-                    : 'border-l-4 border-l-[#173C79]';
+                    ? 'border-l-4 border-l-[#DC2626]'
+                    : 'border-l-4 border-l-[#38BDF8]';
             const iconCls =
               t.severity === 'success'
-                ? 'text-[#55A85F]'
+                ? 'text-[#059669]'
                 : t.severity === 'warning'
-                  ? 'text-[#EF8735]'
+                  ? 'text-[#F59E0B]'
                   : t.severity === 'critical'
-                    ? 'text-[#D94343]'
-                    : 'text-[#173C79]';
+                    ? 'text-[#DC2626]'
+                    : 'text-[#38BDF8]';
 
             return (
               <div
                 key={t.id}
-                className={`pointer-events-auto rounded bg-white border border-[#CBD5E1] ${borderCls} p-3 shadow-lg flex items-start gap-2.5`}
+                className={`pointer-events-auto rounded-xl bg-white ${borderCls} p-3 shadow-lg flex items-start gap-2.5`}
+                style={{ border: '1px solid #E2E8F0' }}
               >
                 <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${iconCls}`} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-[#173C79]">{t.title}</div>
-                  <div className="text-[11px] text-[#5A6A7E] mt-0.5 leading-snug">
-                    {t.message}
-                  </div>
+                  <div className="text-xs font-bold text-[#12345B]">{t.title}</div>
+                  <div className="text-[11px] text-[#64748B] mt-0.5 leading-snug">{t.message}</div>
                 </div>
                 <button
                   type="button"
                   onClick={() => dismissToast(t.id)}
-                  className="text-[#5A6A7E] hover:text-[#26364A] cursor-pointer"
+                  className="text-[#94A3B8] hover:text-[#10223D] cursor-pointer transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>

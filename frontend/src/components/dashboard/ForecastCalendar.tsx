@@ -89,7 +89,7 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
             <button
               type="button"
               onClick={() => onSelectOutlookDay(null)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-medium text-[#0F172A] cursor-pointer"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#CBD5E1] bg-[#F1F6FB] hover:bg-[#F1F5F9] text-xs font-medium text-[#0F172A] cursor-pointer"
             >
               <RotateCcw className="w-3 h-3" />
               Reset
@@ -148,7 +148,7 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
             onClick={() => setPageIdx((p) => Math.max(0, p - 1))}
             disabled={pageIdx === 0}
             aria-label="Previous 7 forecast dates"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#CBD5E1] bg-[#FFFFFF] text-xs font-medium text-[#0F172A] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-[#F8FAFC]"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#CBD5E1] bg-[#FFFFFF] text-xs font-medium text-[#0F172A] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-[#F1F6FB]"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
             Prev 7d
@@ -161,7 +161,7 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
             onClick={() => setPageIdx((p) => Math.min(totalPages - 1, p + 1))}
             disabled={pageIdx >= totalPages - 1}
             aria-label="Next 7 forecast dates"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#CBD5E1] bg-[#FFFFFF] text-xs font-medium text-[#0F172A] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-[#F8FAFC]"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#CBD5E1] bg-[#FFFFFF] text-xs font-medium text-[#0F172A] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-[#F1F6FB]"
           >
             Next 7d
             <ChevronRight className="w-3.5 h-3.5" />
@@ -199,10 +199,10 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
               className={cn(
                 'p-2.5 rounded-md border text-left transition-colors flex flex-col justify-between gap-2',
                 !day.isAvailable
-                  ? 'bg-[#F8FAFC] border-[#E2E8F0] text-[#94A3B8] opacity-65 cursor-not-allowed'
+                  ? 'bg-[#F1F6FB] border-[#E2E8F0] text-[#94A3B8] opacity-65 cursor-not-allowed'
                   : isSelected
                     ? 'bg-[#EFF6FF] border-[#1D4ED8] ring-1 ring-[#1D4ED8] cursor-pointer'
-                    : 'bg-[#FFFFFF] border-[#E2E8F0] hover:border-[#94A3B8] hover:bg-[#F8FAFC] cursor-pointer'
+                    : 'bg-[#FFFFFF] border-[#E2E8F0] hover:border-[#94A3B8] hover:bg-[#F1F6FB] cursor-pointer'
               )}
             >
               <div className="flex items-center justify-between gap-1">

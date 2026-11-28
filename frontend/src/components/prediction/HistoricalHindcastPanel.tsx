@@ -220,20 +220,20 @@ export function HistoricalHindcastPanel() {
                 className={cn(
                   'px-3 py-1.5 rounded-sm border text-xs font-semibold transition-colors cursor-pointer',
                   hindcastEventId === ev.id
-                    ? 'bg-[#173C79] text-white border-[#173C79]'
-                    : 'bg-[#F5F6F7] text-[#26364A] border-[#D6DCE4] hover:border-[#173C79]'
+                    ? 'bg-[#12345B] text-white border-[#12345B]'
+                    : 'bg-[#F1F6FB] text-[#10223D] border-[#E2E8F0] hover:border-[#12345B]'
                 )}
               >
                 {ev.title}
               </button>
             ))}
           </div>
-          <p className="text-xs text-[#5A6A7E]">{activeHistoricalEvent.summary}</p>
+          <p className="text-xs text-[#64748B]">{activeHistoricalEvent.summary}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-          <span className="text-[11px] font-semibold text-[#5A6A7E]">Prevention Budget:</span>
-          <div className="flex items-center rounded-sm bg-[#F5F6F7] border border-[#D6DCE4] p-0.5">
+          <span className="text-[11px] font-semibold text-[#64748B]">Prevention Budget:</span>
+          <div className="flex items-center rounded-sm bg-[#F1F6FB] border border-[#E2E8F0] p-0.5">
             {HINDCAST_BUDGETS.map((b) => (
               <button
                 key={b}
@@ -242,8 +242,8 @@ export function HistoricalHindcastPanel() {
                 className={cn(
                   'px-2 py-1 rounded-sm text-[11px] font-mono font-semibold cursor-pointer transition-colors',
                   hindcastBudget === b
-                    ? 'bg-[#173C79] text-white'
-                    : 'text-[#5A6A7E] hover:text-[#173C79]'
+                    ? 'bg-[#12345B] text-white'
+                    : 'text-[#64748B] hover:text-[#12345B]'
                 )}
               >
                 {b / 1_000_000}M
@@ -262,7 +262,7 @@ export function HistoricalHindcastPanel() {
       </div>
 
       {isRunningHindcast || !hindcastResult ? (
-        <div className="py-10 flex items-center justify-center gap-2 text-xs font-mono text-[#173C79]">
+        <div className="py-10 flex items-center justify-center gap-2 text-xs font-mono text-[#12345B]">
           <Loader2 className="w-4 h-4 animate-spin" />
           Running historical D8 replay &amp; prevention portfolio optimization...
         </div>
@@ -347,16 +347,16 @@ export function HistoricalHindcastPanel() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                <div className="lg:col-span-6 p-3 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC]">
-                  <div className="text-xs font-bold text-[#173C79] mb-2">
+                <div className="lg:col-span-6 p-3 rounded-sm bg-[#F1F6FB] border border-[#E2E6EC]">
+                  <div className="text-xs font-bold text-[#12345B] mb-2">
                     Without Prevention vs. With AI Prevention ({activeHistoricalEvent.dateLabel})
                   </div>
                   <div className="h-52">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#D6DCE4" vertical={false} />
-                        <XAxis dataKey="metric" tick={{ fill: '#26364A', fontSize: 10 }} />
-                        <YAxis tick={{ fill: '#5A6A7E', fontSize: 10 }} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                        <XAxis dataKey="metric" tick={{ fill: '#10223D', fontSize: 10 }} />
+                        <YAxis tick={{ fill: '#64748B', fontSize: 10 }} />
                         <Tooltip contentStyle={{ fontSize: 11, borderColor: '#CBD5E1' }} />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
                         <Bar
@@ -376,40 +376,40 @@ export function HistoricalHindcastPanel() {
                   </div>
                 </div>
 
-                <div className="lg:col-span-6 p-3 rounded-sm bg-[#F5F6F7] border border-[#E2E6EC] space-y-2">
+                <div className="lg:col-span-6 p-3 rounded-sm bg-[#F1F6FB] border border-[#E2E6EC] space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#173C79]">
+                    <span className="text-xs font-bold text-[#12345B]">
                       Prevention Sites ({hindcastResult.selectedPortfolio.length} Selected)
                     </span>
                     <span className="text-[10px] font-mono text-[#55A85F] font-semibold">
                       Lift vs. Random: +{hindcastResult.improvementOverRandomPct}%
                     </span>
                   </div>
-                  <div className="max-h-44 overflow-y-auto divide-y divide-[#E2E6EC] bg-white rounded-sm border border-[#D6DCE4] px-2.5">
+                  <div className="max-h-44 overflow-y-auto divide-y divide-[#E2E6EC] bg-white rounded-sm border border-[#E2E8F0] px-2.5">
                     {hindcastResult.selectedPortfolio.map((iv) => (
                       <div
                         key={iv.id}
                         className="py-1.5 flex items-center justify-between gap-2 text-[11px]"
                       >
                         <div className="min-w-0">
-                          <span className="font-mono font-bold text-[#173C79] mr-1.5">
+                          <span className="font-mono font-bold text-[#12345B] mr-1.5">
                             {iv.id}
                           </span>
-                          <span className="font-semibold text-[#26364A]">
+                          <span className="font-semibold text-[#10223D]">
                             {PILOT_CONFIG.interventions[iv.type].label}
                           </span>
-                          <span className="text-[#5A6A7E] ml-1.5">· {iv.zoneName}</span>
+                          <span className="text-[#64748B] ml-1.5">· {iv.zoneName}</span>
                         </div>
                         <div className="font-mono text-right flex-shrink-0">
                           <span className="text-[#55A85F] font-semibold mr-2">
                             -{iv.expected_impact_pct.toFixed(1)}%
                           </span>
-                          <span className="text-[#5A6A7E]">{formatPKR(iv.cost_pkr)}</span>
+                          <span className="text-[#64748B]">{formatPKR(iv.cost_pkr)}</span>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <p className="text-[10px] text-[#5A6A7E] leading-snug">
+                  <p className="text-[10px] text-[#64748B] leading-snug">
                     <strong>Note:</strong> Counterfactual replay across the 30 m D8 basin grid ({activeHistoricalEvent.dateLabel}).
                   </p>
                 </div>

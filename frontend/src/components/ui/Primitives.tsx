@@ -19,11 +19,14 @@ export function PageHeader({
   return (
     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="font-heading text-xl font-semibold text-[#0F172A] tracking-tight">
+        <h1
+          className="font-heading font-semibold text-[#10223D] tracking-tight"
+          style={{ fontSize: 'clamp(18px, 2.5vw, 26px)', letterSpacing: '-0.025em' }}
+        >
           {title}
         </h1>
         {subtitle && (
-          <p className="text-xs sm:text-sm text-[#475569] mt-0.5 leading-snug">
+          <p className="text-sm text-[#64748B] mt-0.5 leading-snug">
             {subtitle}
           </p>
         )}
@@ -48,10 +51,11 @@ export function PanelCard({
   return (
     <div
       className={cn(
-        'bg-[#FFFFFF] border border-[#E2E8F0] rounded-md shadow-[0_1px_2px_rgba(15,23,42,0.04)]',
+        'bg-white border border-[#E2E8F0] rounded-xl',
         padding,
         className
       )}
+      style={{ boxShadow: '0 1px 3px rgba(16,34,61,0.06), 0 1px 2px rgba(16,34,61,0.04)' }}
     >
       {children}
     </div>
@@ -78,14 +82,14 @@ export function StatCard({
 }) {
   const toneStyles: Record<typeof tone, { card: string; label: string; value: string }> = {
     neutral: {
-      card: 'bg-[#FFFFFF] border-[#E2E8F0]',
+      card: 'bg-white border-[#E2E8F0]',
       label: 'text-[#64748B]',
-      value: 'text-[#0F172A]',
+      value: 'text-[#10223D]',
     },
     primary: {
-      card: 'bg-[#EFF6FF] border-[#BFDBFE]',
-      label: 'text-[#1D4ED8]',
-      value: 'text-[#0F172A]',
+      card: 'bg-[#EFF9FF] border-[#BAE6FD]',
+      label: 'text-[#0369A1]',
+      value: 'text-[#10223D]',
     },
     success: {
       card: 'bg-[#ECFDF5] border-[#A7F3D0]',
@@ -106,16 +110,19 @@ export function StatCard({
   const st = toneStyles[tone];
 
   return (
-    <div className={cn('p-3 rounded-md border', st.card, className)}>
-      <div className={cn('flex items-center justify-between text-[11px] font-semibold tracking-wide', st.label)}>
+    <div
+      className={cn('p-3.5 rounded-xl border', st.card, className)}
+      style={{ boxShadow: '0 1px 3px rgba(16,34,61,0.05)' }}
+    >
+      <div className={cn('flex items-center justify-between text-[11px] font-semibold tracking-wide uppercase', st.label)}>
         <span>{label}</span>
         {icon}
       </div>
-      <div className={cn('text-xl sm:text-2xl font-semibold font-mono mt-1 flex items-center gap-2', st.value)}>
+      <div className={cn('text-xl sm:text-2xl font-semibold font-mono mt-1.5 flex items-center gap-2', st.value)}>
         {value}
       </div>
       {subtext && (
-        <div className="text-[11px] font-mono text-[#64748B] mt-1 truncate">
+        <div className="text-[11px] font-mono text-[#94A3B8] mt-1 truncate">
           {subtext}
         </div>
       )}
@@ -198,19 +205,23 @@ export function MunicipalPanel({
   return (
     <section
       className={cn(
-        'bg-[#FFFFFF] border border-[#E2E8F0] rounded-md shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden',
+        'bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden',
         className
       )}
+      style={{ boxShadow: '0 1px 3px rgba(16,34,61,0.06), 0 1px 2px rgba(16,34,61,0.04)' }}
     >
-      <div className="px-4 py-2.5 bg-[#FFFFFF] border-b border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2">
+      <div
+        className="px-4 py-3 border-b border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2"
+        style={{ background: 'linear-gradient(135deg, #12345B 0%, #0F766E 100%)' }}
+      >
         <div className="flex items-center gap-2 min-w-0">
-          {icon && <span className="flex-shrink-0 text-[#0F766E]">{icon}</span>}
+          {icon && <span className="flex-shrink-0 text-white/80">{icon}</span>}
           <div className="min-w-0">
-            <h2 className="font-heading text-sm font-semibold text-[#0F172A] leading-snug truncate">
+            <h2 className="font-heading text-sm font-semibold text-white leading-snug truncate">
               {title}
             </h2>
             {subtitle && (
-              <p className="text-[11px] text-[#64748B] truncate">{subtitle}</p>
+              <p className="text-[11px] text-white/60 truncate">{subtitle}</p>
             )}
           </div>
         </div>

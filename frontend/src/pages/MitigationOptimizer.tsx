@@ -123,7 +123,7 @@ export function MitigationOptimizer() {
             )}
             <Link
               to="/equity"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#CBD5E1] hover:bg-[#F8FAFC] text-[#0F172A] font-sans font-medium text-xs"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#CBD5E1] hover:bg-[#F1F6FB] text-[#0F172A] font-sans font-medium text-xs"
             >
               <Scale className="w-3.5 h-3.5 text-[#0F766E]" />
               Risk-Transfer Audit
@@ -195,7 +195,7 @@ export function MitigationOptimizer() {
           />
 
           <div className="space-y-2 pt-2 border-t border-[#E6EAEF]">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#5A6A7E]">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
               Eligible Intervention Types
             </div>
             <div className="space-y-2">
@@ -207,26 +207,26 @@ export function MitigationOptimizer() {
                     className={cn(
                       'flex items-start gap-2.5 p-2.5 rounded-sm border cursor-pointer transition-colors',
                       active
-                        ? 'bg-[#EEF3FA] border-[#173C79]/50'
-                        : 'bg-[#F5F6F7] border-[#D6DCE4] opacity-70'
+                        ? 'bg-[#EEF3FA] border-[#12345B]/50'
+                        : 'bg-[#F1F6FB] border-[#E2E8F0] opacity-70'
                     )}
                   >
                     <input
                       type="checkbox"
                       checked={active}
                       onChange={() => toggleInterventionType(meta.type)}
-                      className="mt-0.5 accent-[#173C79]"
+                      className="mt-0.5 accent-[#12345B]"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-[#173C79]">
+                        <span className="text-xs font-semibold text-[#12345B]">
                           {meta.pluralLabel}
                         </span>
-                        <span className="text-[10px] font-mono text-[#5A6A7E]">
+                        <span className="text-[10px] font-mono text-[#64748B]">
                           {formatPKR(meta.unitCostPkr)}/site
                         </span>
                       </div>
-                      <p className="text-[10px] text-[#5A6A7E] mt-0.5 leading-snug">
+                      <p className="text-[10px] text-[#64748B] mt-0.5 leading-snug">
                         {meta.description}
                       </p>
                     </div>
@@ -238,7 +238,7 @@ export function MitigationOptimizer() {
 
           <div className="space-y-2.5 pt-2 border-t border-[#E6EAEF]">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#5A6A7E]">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
                 Optimization Priority Weights
               </span>
               <span className="text-[10px] font-mono text-[#55A85F] font-semibold">
@@ -249,8 +249,8 @@ export function MitigationOptimizer() {
             {WEIGHT_FIELDS.map((wf) => (
               <div key={wf.key} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-[#26364A]">{wf.label}</span>
-                  <span className="font-mono font-semibold text-[#173C79]">
+                  <span className="text-[#10223D]">{wf.label}</span>
+                  <span className="font-mono font-semibold text-[#12345B]">
                     {(normalized[wf.key] * 100).toFixed(0)}%
                   </span>
                 </div>
@@ -287,7 +287,7 @@ export function MitigationOptimizer() {
           </button>
 
           {isOptimizing && optProgressStage && (
-            <div className="text-[11px] font-mono text-[#173C79] text-center">
+            <div className="text-[11px] font-mono text-[#12345B] text-center">
               {optProgressStage}
             </div>
           )}
@@ -374,12 +374,12 @@ export function MitigationOptimizer() {
                         name="Expenditure"
                         unit="M"
                         domain={['auto', 'auto']}
-                        tick={{ fill: '#5A6A7E', fontSize: 11 }}
+                        tick={{ fill: '#64748B', fontSize: 11 }}
                         label={{
                           value: 'Portfolio Expenditure (PKR Millions)',
                           position: 'insideBottom',
                           offset: -4,
-                          fill: '#5A6A7E',
+                          fill: '#64748B',
                           fontSize: 11,
                         }}
                       />
@@ -388,12 +388,12 @@ export function MitigationOptimizer() {
                         dataKey="reductionPct"
                         name="Reduction"
                         unit="%"
-                        tick={{ fill: '#5A6A7E', fontSize: 11 }}
+                        tick={{ fill: '#64748B', fontSize: 11 }}
                         label={{
                           value: 'Exposure Reduction (%)',
                           angle: -90,
                           position: 'insideLeft',
-                          fill: '#5A6A7E',
+                          fill: '#64748B',
                           fontSize: 11,
                         }}
                       />
@@ -413,7 +413,7 @@ export function MitigationOptimizer() {
                         type="monotone"
                         dataKey="reductionPct"
                         name="Pareto Exposure Reduction"
-                        stroke="#173C79"
+                        stroke="#12345B"
                         strokeWidth={2.5}
                         dot={(props: {
                           cx?: number;
@@ -429,7 +429,7 @@ export function MitigationOptimizer() {
                                 cy={cy}
                                 r={7}
                                 fill="#55A85F"
-                                stroke="#173C79"
+                                stroke="#12345B"
                                 strokeWidth={2.5}
                               />
                             );
@@ -453,7 +453,7 @@ export function MitigationOptimizer() {
                               cx={cx}
                               cy={cy}
                               r={4}
-                              fill="#244D8F"
+                              fill="#12345B"
                             />
                           );
                         }}
@@ -510,7 +510,7 @@ export function MitigationOptimizer() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[740px]">
               <thead>
-                <tr className="border-b border-[#D6DCE4] bg-[#F5F6F7] text-[10px] font-semibold uppercase tracking-wider text-[#5A6A7E]">
+                <tr className="border-b border-[#E2E8F0] bg-[#F1F6FB] text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">
                   <th className="py-2 px-2.5">Intervention ID</th>
                   <th className="py-2 px-3">Type</th>
                   <th className="py-2 px-3">Grid Coords</th>
@@ -524,18 +524,18 @@ export function MitigationOptimizer() {
                 {tableRows.map((iv) => {
                   const meta = PILOT_CONFIG.interventions[iv.type];
                   return (
-                    <tr key={iv.id} className="hover:bg-[#F5F6F7]/70">
-                      <td className="py-2.5 px-2.5 font-mono font-semibold text-[#173C79]">
+                    <tr key={iv.id} className="hover:bg-[#F1F6FB]/70">
+                      <td className="py-2.5 px-2.5 font-mono font-semibold text-[#12345B]">
                         {iv.id}
                       </td>
-                      <td className="py-2.5 px-3 font-medium text-[#26364A]">
+                      <td className="py-2.5 px-3 font-medium text-[#10223D]">
                         {meta.label}
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-[#5A6A7E]">
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-[#64748B]">
                         [{iv.row}, {iv.col}] · {formatCoord(iv.lat, iv.lon)}
                       </td>
-                      <td className="py-2.5 px-3 text-[#26364A]">{iv.zoneName}</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-[#26364A]">
+                      <td className="py-2.5 px-3 text-[#10223D]">{iv.zoneName}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-[#10223D]">
                         {formatPKR(iv.cost_pkr)}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-[#55A85F]">
@@ -547,7 +547,7 @@ export function MitigationOptimizer() {
                             SELECTED
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-sm text-[10px] font-mono bg-[#F5F6F7] text-[#5A6A7E] border border-[#D6DCE4]">
+                          <span className="px-2 py-0.5 rounded-sm text-[10px] font-mono bg-[#F1F6FB] text-[#64748B] border border-[#E2E8F0]">
                             CANDIDATE
                           </span>
                         )}
