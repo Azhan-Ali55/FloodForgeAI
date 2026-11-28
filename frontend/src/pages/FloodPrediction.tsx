@@ -78,11 +78,7 @@ const STORM_PRESETS: Array<{
   },
 ];
 
-export function FloodPrediction({
-  defaultFocus = 'forecast',
-}: {
-  defaultFocus?: 'forecast' | 'simulation';
-} = {}) {
+export function FloodPrediction() {
   const {
     weather,
     forecastHorizon,
@@ -213,11 +209,7 @@ export function FloodPrediction({
   return (
     <div className="space-y-4">
       <PageHeader
-        title={
-          defaultFocus === 'simulation'
-            ? 'Cloudburst & Scenario Stress-Test Simulator'
-            : 'Flood Forecast & Rainfall Telemetry'
-        }
+        title="Simulation & Flood Forecast"
         subtitle="Combine meteorological forecasts, soil moisture, and D8 cloudburst stress testing."
         rightSlot={
           <>

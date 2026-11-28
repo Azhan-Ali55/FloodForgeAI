@@ -1,13 +1,10 @@
 import { Suspense, lazy } from 'react';
 import { Analytics } from '@vercel/analytics/react';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { FloodForgeProvider } from './context/FloodForgeContext';
 import { CommandCenter } from './pages/CommandCenter';
 
-const EquityImpact = lazy(() =>
-  import('./pages/EquityImpact').then((m) => ({ default: m.EquityImpact }))
-);
 const FloodPrediction = lazy(() =>
   import('./pages/FloodPrediction').then((m) => ({ default: m.FloodPrediction }))
 );
@@ -54,14 +51,14 @@ export function App() {
             <Routes>
               <Route path="/" element={<CommandCenter />} />
               <Route path="/map" element={<IntelligenceMap />} />
-              <Route path="/forecast" element={<FloodPrediction defaultFocus="forecast" />} />
-              <Route path="/simulation" element={<FloodPrediction defaultFocus="simulation" />} />
+              <Route path="/simulation" element={<FloodPrediction />} />
               <Route path="/mitigation" element={<MitigationOptimizer />} />
               <Route path="/reports" element={<Reports />} />
-              {/* Legacy route aliases preserved */}
-              <Route path="/prediction" element={<FloodPrediction defaultFocus="forecast" />} />
-              <Route path="/optimizer" element={<MitigationOptimizer />} />
-              <Route path="/equity" element={<EquityImpact />} />
+              {/* Legacy route redirects */}
+              <Route path="/forecast" element={<Navigate to="/simulation" replace />} />
+              <Route path="/prediction" element={<Navigate to="/simulation" replace />} />
+              <Route path="/optimizer" element={<Navigate to="/mitigation" replace />} />
+              <Route path="/equity" element={<Navigate to="/reports?tab=equity" replace />} />
               <Route path="/monitoring" element={<LiveMonitoring />} />
               <Route path="/health" element={<ModelHealth />} />
               <Route path="/settings" element={<Settings />} />

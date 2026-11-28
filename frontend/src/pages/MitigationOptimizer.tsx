@@ -122,8 +122,8 @@ export function MitigationOptimizer() {
               </span>
             )}
             <Link
-              to="/equity"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#FFFFFF] border border-[#CBD5E1] hover:bg-[#F1F6FB] text-[#0F172A] font-sans font-medium text-xs"
+              to="/reports?tab=equity"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#FFFFFF] border border-[#CBD5E1] hover:bg-[#F1F6FB] text-[#0F172A] font-sans font-medium text-xs"
             >
               <Scale className="w-3.5 h-3.5 text-[#0F766E]" />
               Risk-Transfer Audit

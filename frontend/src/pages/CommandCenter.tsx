@@ -124,10 +124,6 @@ export function CommandCenter() {
     hasLoadedInitialWeather,
     selectedOutlookDay,
     setSelectedOutlookDay,
-    demo2001DayOffset,
-    demo2001Hour,
-    setDemo2001DayOffset,
-    setDemo2001Hour,
     monsoonStressMode,
     browserAlertsEnabled,
     enableBrowserNotifications,
@@ -320,7 +316,16 @@ export function CommandCenter() {
         </div>
       </div>
 
-      {/* ── 4 KPI CARDS ── */}
+      {/* ── FLOOD OUTLOOK (ABOVE SUMMARY METRIC CARDS) ── */}
+      <ForecastCalendar
+        weather={weather}
+        operationalMode={operationalMode}
+        monsoonStressMode={monsoonStressMode}
+        selectedOutlookDay={selectedOutlookDay}
+        onSelectOutlookDay={setSelectedOutlookDay}
+      />
+
+      {/* ── 4 SUMMARY METRIC CARDS ── */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         {/* Flood Risk */}
         <div className="ff-kpi">
@@ -402,19 +407,6 @@ export function CommandCenter() {
           </div>
         </div>
       </div>
-
-      {/* ── FORECAST CALENDAR (ABOVE MAP — mandatory) ── */}
-      <ForecastCalendar
-        weather={weather}
-        operationalMode={operationalMode}
-        monsoonStressMode={monsoonStressMode}
-        selectedOutlookDay={selectedOutlookDay}
-        onSelectOutlookDay={setSelectedOutlookDay}
-        demo2001DayOffset={demo2001DayOffset}
-        demo2001Hour={demo2001Hour}
-        onDemo2001DayChange={setDemo2001DayOffset}
-        onDemo2001HourChange={setDemo2001Hour}
-      />
 
       {/* ── MAIN WORKSPACE: Map (lg:8) + Right Panel (lg:4) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">

@@ -11,10 +11,6 @@ interface ForecastCalendarProps {
   monsoonStressMode: boolean;
   selectedOutlookDay: number | null;
   onSelectOutlookDay: (dayOffset: number | null) => void;
-  demo2001DayOffset: number;
-  demo2001Hour: number;
-  onDemo2001DayChange: (day: number) => void;
-  onDemo2001HourChange: (hour: number) => void;
 }
 
 const PAGE_SIZE = 7;
@@ -25,16 +21,11 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
   monsoonStressMode,
   selectedOutlookDay,
   onSelectOutlookDay,
-  demo2001DayOffset,
-  demo2001Hour,
-  onDemo2001DayChange,
-  onDemo2001HourChange,
 }: ForecastCalendarProps) {
   const days = weather.outlook30d;
   const totalPages = Math.max(1, Math.ceil(days.length / PAGE_SIZE));
   const [pageIdx, setPageIdx] = useState(0);
 
-  // Reset pagination when outlook source changes or jump to selected day
   useEffect(() => {
     if (selectedOutlookDay !== null) {
       const idx = days.findIndex((d) => d.dayOffset === selectedOutlookDay);
@@ -61,10 +52,15 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
       ? `${firstMonth} – ${lastMonth}`
       : firstMonth;
 
+  const subtitle =
+    operationalMode === 'demo_2001' && !monsoonStressMode
+      ? `July 2001 Archive (${availableCount} days)`
+      : `${availableCount}/${days.length} days available · ${weather.fetchedAtPkt}`;
+
   return (
     <MunicipalPanel
       title="Flood Outlook"
-      subtitle={`Calendar forecast (${availableCount}/${days.length} days available) · Synced ${weather.fetchedAtPkt}`}
+      subtitle={subtitle}
       icon={<CalendarDays className="w-4 h-4" />}
       rightSlot={
         <div className="flex flex-wrap items-center gap-2">
@@ -75,12 +71,12 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
               const v = e.target.value;
               onSelectOutlookDay(v === '' ? null : Number(v));
             }}
-            className="px-2 py-1 rounded border border-[#CBD5E1] bg-[#FFFFFF] text-xs font-medium text-[#0F172A]"
+            className="px-2.5 py-1 rounded-lg border border-white/20 bg-white/95 text-xs font-medium text-[#10223D]"
           >
             <option value="">Active Horizon ({days[0]?.dateLabel ?? 'Current'})</option>
             {days.map((d) => (
               <option key={d.dayOffset} value={d.dayOffset} disabled={!d.isAvailable}>
-                {d.dateLabel} ({d.monthYearLabel}) · {d.isAvailable && d.rainfallMm !== null ? `${d.rainfallMm.toFixed(1)} mm` : 'Unavailable'}
+                {d.dateLabel} · {d.isAvailable && d.rainfallMm !== null ? `${d.rainfallMm.toFixed(1)} mm` : 'Unavailable'}
               </option>
             ))}
           </select>
@@ -89,7 +85,7 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
             <button
               type="button"
               onClick={() => onSelectOutlookDay(null)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#CBD5E1] bg-[#F1F6FB] hover:bg-[#F1F5F9] text-xs font-medium text-[#0F172A] cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-white/25 bg-white/15 hover:bg-white/25 text-xs font-medium text-white cursor-pointer"
             >
               <RotateCcw className="w-3 h-3" />
               Reset
@@ -99,48 +95,15 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
       }
       bodyClassName="p-3.5 space-y-3"
     >
-      {/* 2001 Time-Machine Hour Scrub (shown only in 2001 Demo mode) */}
-      {operationalMode === 'demo_2001' && !monsoonStressMode && (
-        <div className="p-2.5 rounded-md border border-[#FECACA] bg-[#FEF2F2] flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="font-medium text-[#991B1B]">
-            July 2001 Cloudburst Replay: Jul {16 + demo2001DayOffset}, 2001 · {String(demo2001Hour).padStart(2, '0')}:00 PKT
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-1.5 text-[#7F1D1D]">
-              <span>Day:</span>
-              <input
-                type="range"
-                aria-label="2001 archive day selector"
-                min={0}
-                max={11}
-                value={demo2001DayOffset}
-                onChange={(e) => onDemo2001DayChange(Number(e.target.value))}
-                className="w-24 accent-[#DC2626] cursor-pointer"
-              />
-            </label>
-            <label className="flex items-center gap-1.5 text-[#7F1D1D]">
-              <span>Hour:</span>
-              <input
-                type="range"
-                aria-label="2001 archive hour selector"
-                min={0}
-                max={23}
-                value={demo2001Hour}
-                onChange={(e) => onDemo2001HourChange(Number(e.target.value))}
-                className="w-24 accent-[#DC2626] cursor-pointer"
-              />
-            </label>
-          </div>
-        </div>
-      )}
-
       {/* Month span + 7-Day Window Pagination */}
       <div className="flex items-center justify-between gap-2 text-xs">
-        <div className="font-semibold text-[#0F172A]">
+        <div className="font-semibold text-[#10223D]">
           {monthSpanLabel || 'Forecast Timeline'}
-          <span className="ml-2 font-normal text-[#64748B]">
-            Showing {visibleDays[0]?.dateLabel} – {visibleDays[visibleDays.length - 1]?.dateLabel}
-          </span>
+          {visibleDays.length > 0 && (
+            <span className="ml-2 font-normal text-[#64748B]">
+              {visibleDays[0]?.dateLabel} – {visibleDays[visibleDays.length - 1]?.dateLabel}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -148,10 +111,10 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
             onClick={() => setPageIdx((p) => Math.max(0, p - 1))}
             disabled={pageIdx === 0}
             aria-label="Previous 7 forecast dates"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#CBD5E1] bg-[#FFFFFF] text-xs font-medium text-[#0F172A] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-[#F1F6FB]"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#10223D] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-[#F1F6FB]"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
-            Prev 7d
+            Prev
           </button>
           <span className="font-mono text-[11px] text-[#64748B] px-1">
             {pageIdx + 1}/{totalPages}
@@ -161,9 +124,9 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
             onClick={() => setPageIdx((p) => Math.min(totalPages - 1, p + 1))}
             disabled={pageIdx >= totalPages - 1}
             aria-label="Next 7 forecast dates"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[#CBD5E1] bg-[#FFFFFF] text-xs font-medium text-[#0F172A] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-[#F1F6FB]"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#10223D] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed hover:bg-[#F1F6FB]"
           >
-            Next 7d
+            Next
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -175,11 +138,6 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
           const isSelected = selectedOutlookDay === day.dayOffset;
           const rain = day.rainfallMm;
           const meta = STATION_RISK_META[day.riskLevel];
-          const isExperimental = day.confidenceTier === 'EXPERIMENTAL';
-          const barPct =
-            day.isAvailable && rain !== null
-              ? Math.min(100, Math.max(8, Math.round((rain / 120) * 100)))
-              : 0;
 
           return (
             <button
@@ -189,82 +147,62 @@ export const ForecastCalendar = React.memo(function ForecastCalendar({
               aria-pressed={isSelected}
               title={
                 day.isAvailable && rain !== null
-                  ? `${day.dateLabel} (${day.monthYearLabel}): ${rain.toFixed(1)} mm (P90: ${day.p90RainfallMm !== null ? `${day.p90RainfallMm.toFixed(1)} mm` : 'N/A'}, ${day.probabilityPct !== null ? `${day.probabilityPct}% prob` : 'prob N/A'}) · ${day.confidenceLabel}`
-                  : `${day.dateLabel}: Rainfall data unavailable`
+                  ? `${day.dateLabel} (${day.monthYearLabel}): ${rain.toFixed(1)} mm${day.p90RainfallMm !== null ? ` · P90 ${day.p90RainfallMm.toFixed(1)} mm` : ''}`
+                  : `${day.dateLabel}: Unavailable`
               }
               onClick={() => {
                 if (!day.isAvailable) return;
                 onSelectOutlookDay(isSelected ? null : day.dayOffset);
               }}
               className={cn(
-                'p-2.5 rounded-md border text-left transition-colors flex flex-col justify-between gap-2',
+                'p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5',
                 !day.isAvailable
                   ? 'bg-[#F1F6FB] border-[#E2E8F0] text-[#94A3B8] opacity-65 cursor-not-allowed'
                   : isSelected
-                    ? 'bg-[#EFF6FF] border-[#1D4ED8] ring-1 ring-[#1D4ED8] cursor-pointer'
-                    : 'bg-[#FFFFFF] border-[#E2E8F0] hover:border-[#94A3B8] hover:bg-[#F1F6FB] cursor-pointer'
+                    ? 'bg-[#EFF6FF] border-[#12345B] ring-1 ring-[#12345B] cursor-pointer'
+                    : 'bg-white border-[#E2E8F0] hover:border-[#94A3B8] hover:bg-[#F1F6FB] cursor-pointer'
               )}
             >
-              <div className="flex items-center justify-between gap-1">
-                <span className="font-semibold text-xs text-[#0F172A] truncate">
+              <div className="flex items-center justify-between gap-1.5">
+                <span className="font-semibold text-xs text-[#10223D] truncate">
                   {day.dateLabel}
                 </span>
-                {isExperimental && (
-                  <span className="text-[11px] font-medium px-1 rounded bg-[#F1F5F9] text-[#475569]">
-                    Exp
-                  </span>
+                {day.isAvailable && (
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: (rain ?? 0) < 2 ? '#94A3B8' : meta.hex }}
+                    aria-label={`Risk: ${day.riskLevel}`}
+                  />
                 )}
               </div>
 
-              <div className="space-y-1">
-                <div className="font-mono text-xs font-semibold text-[#0F172A]">
-                  {day.isAvailable && rain !== null ? `${rain.toFixed(1)} mm` : 'Unavailable'}
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-[#F1F5F9] overflow-hidden">
-                  {day.isAvailable && (
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${barPct}%`,
-                        backgroundColor: (rain ?? 0) < 2 ? '#94A3B8' : meta.hex,
-                      }}
-                    />
-                  )}
-                </div>
+              <div className="font-mono text-sm font-semibold text-[#10223D]">
+                {day.isAvailable && rain !== null ? `${rain.toFixed(1)} mm` : '—'}
               </div>
 
               <div className="text-[11px] text-[#64748B] truncate">
                 {day.isAvailable
                   ? day.p90RainfallMm !== null
                     ? `P90 ${day.p90RainfallMm.toFixed(0)} mm`
-                    : day.tier === 'HIGH_PRECISION_5D'
-                      ? 'Short-range'
-                      : 'Medium-range'
-                  : 'Missing rain'}
+                    : day.riskLevel
+                  : 'Unavailable'}
               </div>
             </button>
           );
         })}
       </div>
 
-      {/* Selected Day Provenance & Uncertainty Bar + Honest Accuracy Disclosure */}
-      <div className="pt-2 border-t border-[#F1F5F9] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-[#64748B]">
-        <div>
-          {selectedDayObj ? (
-            <span>
-              Selected: <strong className="text-[#0F172A]">{selectedDayObj.dateLabel} ({selectedDayObj.monthYearLabel})</strong> —{' '}
-              {selectedDayObj.confidenceLabel}
-              {selectedDayObj.p90RainfallMm !== null && ` · P90 upper: ${selectedDayObj.p90RainfallMm.toFixed(1)} mm`}
-            </span>
-          ) : (
-            <span>
-              Coverage: Days 1–16 deterministic daily{days.length > 16 ? `, Days 17–${days.length} experimental GFS ensemble` : ''}.
-            </span>
-          )}
-        </div>
-        <div className="text-[#64748B]">
-          Forecast accuracy vs. local river gauges unverified (confidence intervals unavailable).
-        </div>
+      {/* Selected Day Info or Concise Coverage Note */}
+      <div className="pt-2 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#64748B]">
+        {selectedDayObj ? (
+          <span>
+            Selected: <strong className="text-[#10223D]">{selectedDayObj.dateLabel} ({selectedDayObj.monthYearLabel})</strong>
+            {selectedDayObj.p90RainfallMm !== null && ` · P90 upper: ${selectedDayObj.p90RainfallMm.toFixed(1)} mm`}
+          </span>
+        ) : (
+          <span>Select any date to inspect modeled basin impact.</span>
+        )}
+        <span>Gauge-calibrated accuracy unverified.</span>
       </div>
     </MunicipalPanel>
   );

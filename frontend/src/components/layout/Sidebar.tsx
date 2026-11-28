@@ -1,8 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   Activity,
-  BarChart3,
-  CloudRain,
   FileBarChart2,
   FlaskConical,
   HeartPulse,
@@ -19,10 +17,8 @@ const PRIMARY_NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/monitoring', label: 'Live Monitoring', icon: Activity, end: false },
   { to: '/map', label: 'Flood Map', icon: MapIcon, end: false },
-  { to: '/forecast', label: 'Forecast', icon: CloudRain, end: false },
   { to: '/simulation', label: 'Simulation', icon: FlaskConical, end: false },
   { to: '/mitigation', label: 'Mitigation', icon: Shield, end: false },
-  { to: '/equity', label: 'Equity Impact', icon: BarChart3, end: false },
   { to: '/reports', label: 'Reports', icon: FileBarChart2, end: false },
 ];
 
