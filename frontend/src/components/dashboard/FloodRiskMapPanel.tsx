@@ -14,7 +14,19 @@ import type {
 import { cn } from '../../utils/cn';
 import { GeospatialMap } from '../maps/GeospatialMap';
 import { MunicipalPanel } from '../ui/Primitives';
+import { Tooltip } from '../ui/Tooltip';
 import type { MapComparisonMode } from './MitigationComparisonPanel';
+
+const COMPARISON_MODE_OPTIONS: Array<{
+  mode: MapComparisonMode;
+  label: string;
+  tip: string;
+}> = [
+  { mode: 'baseline', label: 'Before', tip: 'Display modeled inundation without the selected mitigation portfolio.' },
+  { mode: 'mitigated', label: 'After', tip: 'Display modeled inundation with the selected mitigation portfolio.' },
+  { mode: 'compare', label: 'Split Compare', tip: 'Compare baseline and mitigated inundation side by side.' },
+  { mode: 'delta', label: 'Delta', tip: 'Highlight modeled changes in inundation.' },
+];
 
 interface FloodRiskMapPanelProps {
   twin: TwinGrid;
@@ -70,30 +82,24 @@ export const FloodRiskMapPanel = React.memo(function FloodRiskMapPanel({
         <div
           role="group"
           aria-label="Map scenario comparison mode"
-          className="flex flex-wrap items-center rounded-md bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 text-xs max-w-full"
+          className="flex flex-wrap items-center rounded-lg bg-white/95 border border-white/25 p-0.5 text-xs max-w-full"
         >
-          {(
-            [
-              ['baseline', 'Before'],
-              ['mitigated', 'After'],
-              ['compare', 'Split Compare'],
-              ['delta', 'Delta'],
-            ] as Array<[MapComparisonMode, string]>
-          ).map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              aria-pressed={mapViewMode === mode}
-              onClick={() => onMapViewModeChange(mode)}
-              className={cn(
-                'px-2.5 py-1 rounded font-medium transition-colors cursor-pointer whitespace-nowrap',
-                mapViewMode === mode
-                  ? 'bg-[#FFFFFF] text-[#0F172A] shadow-2xs border border-[#CBD5E1]'
-                  : 'text-[#64748B] hover:text-[#0F172A] border border-transparent'
-              )}
-            >
-              {label}
-            </button>
+          {COMPARISON_MODE_OPTIONS.map(({ mode, label, tip }) => (
+            <Tooltip key={mode} content={tip} side="bottom">
+              <button
+                type="button"
+                aria-pressed={mapViewMode === mode}
+                onClick={() => onMapViewModeChange(mode)}
+                className={cn(
+                  'px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer whitespace-nowrap',
+                  mapViewMode === mode
+                    ? 'bg-[#12345B] text-white shadow-2xs'
+                    : 'text-[#475569] hover:text-[#10223D]'
+                )}
+              >
+                {label}
+              </button>
+            </Tooltip>
           ))}
         </div>
       }

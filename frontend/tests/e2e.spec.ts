@@ -84,8 +84,19 @@ test.describe('FloodForgeAI Comprehensive Responsive & Functional QA', () => {
     // Legacy route redirects
     await page.goto('/forecast');
     await expect(page).toHaveURL(/\/simulation$/);
+    await page.getByRole('tab', { name: 'Scenario Simulator' }).click();
+    await expect(page.getByRole('button', { name: /Run Flood Simulation/i })).toBeVisible();
+    await page.getByRole('tab', { name: 'Historical Analysis' }).click();
+    await expect(page.getByText(/2001/i).first()).toBeVisible();
+
     await page.goto('/equity');
     await expect(page).toHaveURL(/\/reports\?tab=equity$/);
+    await expect(page.getByRole('tab', { name: 'Zone Equity & Risk-Transfer' })).toHaveAttribute('aria-selected', 'true');
+    // Reports must not embed the full editable optimizer workspace
+    await expect(page.getByRole('button', { name: /Run Budget Optimization/i })).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Model Diagnostics' }).click();
+    await expect(page).toHaveURL(/\/reports\?tab=diagnostics$/);
+    await expect(page.getByRole('link', { name: /Open Full Model Health/i })).toBeVisible();
 
     // 404 route handling
     await page.goto('/nonexistent-municipal-page');

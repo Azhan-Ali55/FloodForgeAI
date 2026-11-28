@@ -1,11 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Coins, Loader2, Play, Scale, Sparkles } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  Coins,
+  Loader2,
+  Play,
+  Scale,
+  Sparkles,
+} from 'lucide-react';
 import type { OptimizationConfig, OptimizationResult } from '../../types/floodforge';
 import { cn } from '../../utils/cn';
 import { formatNumber, formatPKR } from '../../utils/formatters';
 import { BudgetControlCard } from '../ui/BudgetControlCard';
 import { MunicipalPanel } from '../ui/Primitives';
+import { Tooltip } from '../ui/Tooltip';
 
 export type MapComparisonMode = 'mitigated' | 'baseline' | 'delta' | 'compare';
 
@@ -18,10 +28,6 @@ interface MitigationComparisonPanelProps {
   isOptStale: boolean;
   optError: string | null;
   onRunOptimization: () => Promise<void>;
-  mapViewMode: MapComparisonMode;
-  onMapViewModeChange: (m: MapComparisonMode) => void;
-  compareSplitPct: number;
-  onCompareSplitChange: (pct: number) => void;
 }
 
 export const MitigationComparisonPanel = React.memo(function MitigationComparisonPanel({
@@ -33,11 +39,9 @@ export const MitigationComparisonPanel = React.memo(function MitigationCompariso
   isOptStale,
   optError,
   onRunOptimization,
-  mapViewMode,
-  onMapViewModeChange,
-  compareSplitPct,
-  onCompareSplitChange,
 }: MitigationComparisonPanelProps) {
+  const [showDetails, setShowDetails] = useState(false);
+
   const baseMetrics = optResult?.baselineResult.metrics;
   const optMetrics = optResult?.optimizedResult.metrics;
 
@@ -45,7 +49,6 @@ export const MitigationComparisonPanel = React.memo(function MitigationCompariso
     baseMetrics && (baseMetrics.exposed_area_km2 > 0 || baseMetrics.buildings_exposed > 0)
   );
 
-  // Dynamically derive knee/efficiency metrics from actual optimization output (never hardcoded)
   const kneePoint =
     optResult?.paretoFrontier.find((p) => p.isKneePoint) ??
     optResult?.paretoFrontier[optResult.paretoFrontier.length - 1] ??
@@ -106,111 +109,58 @@ export const MitigationComparisonPanel = React.memo(function MitigationCompariso
   return (
     <MunicipalPanel
       title="Mitigation Impact"
-      subtitle={`Provenance: ${engineLabel}${isAutoSyncingOpt || isOptimizing ? ' (Updating...)' : ''}`}
+      subtitle={`Provenance: ${engineLabel}${isAutoSyncingOpt || isOptimizing ? ' · Updating…' : ''}`}
       icon={<Coins className="w-4 h-4" />}
       rightSlot={
-        <div className="flex items-center gap-1.5">
-          <Link
-            to="/mitigation"
-            className="text-xs font-medium text-[#1D4ED8] hover:underline"
-          >
-            Full Optimizer
-          </Link>
-        </div>
+        <Link
+          to="/mitigation"
+          className="text-xs font-medium text-white/95 hover:text-white underline"
+        >
+          Full Optimizer
+        </Link>
       }
       bodyClassName="p-3.5 space-y-3"
     >
-      {/* 4-Step End-to-End Decision Workflow */}
-      <div className="grid grid-cols-4 gap-1 text-[11px] text-center">
-        {[
-          { step: '1. Forecast', done: true },
-          { step: '2. Risk', done: Boolean(baseMetrics) },
-          { step: '3. Portfolio', done: Boolean(optResult && !isOptStale) },
-          { step: '4. Compare', done: Boolean(optResult && !isOptStale) },
-        ].map((item) => (
-          <div
-            key={item.step}
-            className={cn(
-              'py-1 px-1 rounded border font-medium truncate',
-              item.done
-                ? 'bg-[#F0FDFA] border-[#99F6E4] text-[#0F766E]'
-                : 'bg-[#F1F6FB] border-[#E2E8F0] text-[#64748B]'
-            )}
-          >
-            {item.step}
-          </div>
-        ))}
-      </div>
-
-      {/* Synchronized Before/After Map Mode Controls */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs font-medium text-[#334155]">
-          <span>Map Comparison View</span>
-          {mapViewMode === 'compare' && (
-            <span className="font-mono text-[11px] text-[#0F766E]">
-              Split {compareSplitPct}% / {100 - compareSplitPct}%
-            </span>
-          )}
-        </div>
-        <div
-          role="group"
-          aria-label="Mitigation comparison view selector"
-          className="grid grid-cols-4 gap-1 rounded-md bg-[#F1F5F9] p-0.5 border border-[#E2E8F0] text-xs"
-        >
-          {(
-            [
-              ['baseline', 'Before'],
-              ['mitigated', 'After'],
-              ['compare', 'Split'],
-              ['delta', 'Delta'],
-            ] as Array<[MapComparisonMode, string]>
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={mapViewMode === id}
-              onClick={() => onMapViewModeChange(id)}
-              className={cn(
-                'py-1 rounded font-medium transition-colors cursor-pointer',
-                mapViewMode === id
-                  ? 'bg-[#0F172A] text-white'
-                  : 'text-[#475569] hover:text-[#0F172A]'
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {mapViewMode === 'compare' && (
-          <input
-            type="range"
-            aria-label="Comparison split curtain position"
-            min={5}
-            max={95}
-            step={1}
-            value={compareSplitPct}
-            onChange={(e) => onCompareSplitChange(Number(e.target.value))}
-            className="w-full accent-[#0F766E] cursor-pointer"
-          />
-        )}
-      </div>
-
-      {/* Stale / Error Guard */}
+      {/* Stale / Error / Loading Guard */}
       {(optError || isOptStale) && (
         <div
           role="status"
-          className="px-2.5 py-2 rounded-md border border-[#FED7AA] bg-[#FFF7ED] text-[#9A3412] text-xs flex items-center gap-2"
+          className="px-2.5 py-2 rounded-lg border border-[#FED7AA] bg-[#FFF7ED] text-[#9A3412] text-xs flex items-center gap-2"
         >
           <Loader2 className={cn('w-3.5 h-3.5 flex-shrink-0', (isAutoSyncingOpt || isOptimizing) && 'animate-spin')} />
-          <span>{optError || 'Recomputing portfolio metrics for current inputs...'}</span>
+          <span>{optError || 'Recomputing portfolio metrics for current inputs…'}</span>
         </div>
       )}
 
-      {/* Before vs After Quantitative Impact Comparison */}
+      {/* Quick Budget Control */}
+      <Tooltip content="Adjust the capital budget cap to evaluate portfolio exposure reduction.">
+        <div className="w-full">
+          <BudgetControlCard
+            ariaLabel="Mitigation investment budget"
+            inputId="dashboard-budget-slider"
+            budgetPkr={optConfig.budgetPkr}
+            onBudgetChange={onBudgetChange}
+          />
+        </div>
+      </Tooltip>
+
+      {/* Primary Before vs After Summary */}
       {!isOptStale && !optError && optResult && (
         <div className="space-y-2.5">
-          <div className="rounded-md border border-[#E2E8F0] overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-[#E2E8F0] bg-[#F1F6FB] text-xs">
+            <span className="text-[#475569] flex items-center gap-1.5 font-medium">
+              <Sparkles className="w-3.5 h-3.5 text-[#0F766E]" />
+              {optResult.selectedPortfolio.length} sites · {formatPKR(optResult.totalCostPkr)}
+            </span>
+            <span className="font-mono font-bold text-[#0F766E]">
+              {optResult.weightedReductionPct > 0
+                ? `-${optResult.weightedReductionPct.toFixed(1)}%`
+                : '0.0%'}{' '}
+              <span className="font-sans font-normal text-[#64748B]">est.</span>
+            </span>
+          </div>
+
+          <div className="rounded-lg border border-[#E2E8F0] overflow-hidden">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
                 <tr className="bg-[#F1F6FB] border-b border-[#E2E8F0] text-[11px] font-semibold text-[#64748B]">
@@ -225,7 +175,7 @@ export const MitigationComparisonPanel = React.memo(function MitigationCompariso
                   <tr key={row.label}>
                     <td className="py-1.5 px-2.5 font-medium text-[#334155]">{row.label}</td>
                     <td className="py-1.5 px-2 text-right font-mono text-[#64748B]">{row.before}</td>
-                    <td className="py-1.5 px-2 text-right font-mono font-semibold text-[#0F172A]">{row.after}</td>
+                    <td className="py-1.5 px-2 text-right font-mono font-semibold text-[#10223D]">{row.after}</td>
                     <td className="py-1.5 px-2.5 text-right font-mono font-semibold text-[#0F766E]">
                       {row.delta}
                     </td>
@@ -235,93 +185,90 @@ export const MitigationComparisonPanel = React.memo(function MitigationCompariso
             </table>
           </div>
 
-          {/* Dynamic Optimization Metrics (Zero hardcoded Pareto label) */}
-          <div className="p-2.5 rounded-md border border-[#E2E8F0] bg-[#F1F6FB] space-y-1 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[#475569] flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-[#0F766E]" />
-                Deployed Portfolio ({optResult.selectedPortfolio.length} sites)
-              </span>
-              <span className="font-mono font-semibold text-[#0F172A]">
-                {formatPKR(optResult.totalCostPkr)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-[#64748B]">
-              <span>Weighted Exposure Reduction</span>
-              <span className="font-mono font-semibold text-[#0F766E]">
-                {optResult.weightedReductionPct > 0
-                  ? `-${optResult.weightedReductionPct.toFixed(1)}%`
-                  : '0.0%'}
-              </span>
-            </div>
-            {costPerPctM !== null && (
-              <div className="flex items-center justify-between text-[11px] text-[#64748B]">
-                <span>Marginal Efficiency</span>
-                <span className="font-mono text-[#0F172A]">
-                  {costPerPctM.toFixed(1)}M PKR / % reduction
-                </span>
-              </div>
-            )}
-            {kneePoint && (
-              <div className="flex items-center justify-between text-[11px] text-[#64748B]">
-                <span>Pareto Knee From Model</span>
-                <span className="font-mono text-[#1D4ED8]">
-                  {(kneePoint.budgetPkr / 1_000_000).toFixed(0)}M PKR (
-                  {kneePoint.exposureReductionPct > 0
-                    ? `-${kneePoint.exposureReductionPct.toFixed(1)}%`
-                    : '0.0%'}
-                  )
-                </span>
-              </div>
-            )}
-          </div>
-
           {/* Equity Risk Transfer Indicator */}
-          <div
-            className={cn(
-              'px-2.5 py-2 rounded-md border text-[11px] flex items-center justify-between gap-2',
-              hasFloodRisk && optResult.equityStatus === 'RISK_TRANSFER_CONCERN'
-                ? 'bg-[#FEF2F2] border-[#FECACA] text-[#991B1B]'
-                : 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46]'
-            )}
-          >
-            <span className="flex items-center gap-1.5 font-medium">
-              {hasFloodRisk && optResult.equityStatus === 'RISK_TRANSFER_CONCERN' ? (
-                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-              ) : (
-                <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+          <Tooltip content="Identify potential downstream risk transfer caused by mitigation.">
+            <div
+              className={cn(
+                'w-full px-2.5 py-2 rounded-lg border text-[11px] flex items-center justify-between gap-2',
+                hasFloodRisk && optResult.equityStatus === 'RISK_TRANSFER_CONCERN'
+                  ? 'bg-[#FEF2F2] border-[#FECACA] text-[#991B1B]'
+                  : 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46]'
               )}
-              {hasFloodRisk && optResult.equityStatus === 'RISK_TRANSFER_CONCERN'
-                ? 'Downstream risk increase flagged'
-                : 'Downstream equity check passed'}
-            </span>
-            <Link to="/equity" className="inline-flex items-center gap-1 underline font-medium">
-              <Scale className="w-3 h-3" />
-              Audit
-            </Link>
+            >
+              <span className="flex items-center gap-1.5 font-medium">
+                {hasFloodRisk && optResult.equityStatus === 'RISK_TRANSFER_CONCERN' ? (
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                )}
+                {hasFloodRisk && optResult.equityStatus === 'RISK_TRANSFER_CONCERN'
+                  ? 'Downstream risk increase flagged'
+                  : 'Downstream equity check passed'}
+              </span>
+              <Link to="/reports?tab=equity" className="inline-flex items-center gap-1 underline font-medium">
+                <Scale className="w-3 h-3" />
+                Audit
+              </Link>
+            </div>
+          </Tooltip>
+
+          {/* Progressive Disclosure: Secondary Efficiency & Pareto Details */}
+          <div>
+            <button
+              type="button"
+              aria-expanded={showDetails}
+              onClick={() => setShowDetails((v) => !v)}
+              className="w-full flex items-center justify-between text-[11px] font-medium text-[#64748B] hover:text-[#10223D] py-1 cursor-pointer"
+            >
+              <span>Pareto &amp; efficiency details</span>
+              <ChevronDown
+                className={cn('w-3.5 h-3.5 transition-transform', showDetails && 'rotate-180')}
+              />
+            </button>
+            {showDetails && (
+              <div className="mt-1 p-2.5 rounded-lg border border-[#E2E8F0] bg-[#F1F6FB] space-y-1 text-[11px] text-[#64748B]">
+                {costPerPctM !== null && (
+                  <div className="flex items-center justify-between">
+                    <span>Marginal Efficiency</span>
+                    <span className="font-mono text-[#10223D]">
+                      {costPerPctM.toFixed(1)}M PKR / % reduction
+                    </span>
+                  </div>
+                )}
+                {kneePoint && (
+                  <div className="flex items-center justify-between">
+                    <span>Pareto Knee From Model</span>
+                    <span className="font-mono text-[#12345B]">
+                      {(kneePoint.budgetPkr / 1_000_000).toFixed(0)}M PKR (
+                      {kneePoint.exposureReductionPct > 0
+                        ? `-${kneePoint.exposureReductionPct.toFixed(1)}%`
+                        : '0.0%'}
+                      )
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span>Remaining Budget</span>
+                  <span className="font-mono text-[#10223D]">
+                    {formatPKR(optResult.remainingBudgetPkr)}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Compact Budget Control + Explicit Recompute Action */}
-      <div className="pt-2 border-t border-[#E2E8F0] space-y-2.5">
-        <BudgetControlCard
-          ariaLabel="Mitigation investment budget"
-          inputId="dashboard-budget-slider"
-          budgetPkr={optConfig.budgetPkr}
-          onBudgetChange={onBudgetChange}
-        />
-
-        <button
-          type="button"
-          onClick={() => void onRunOptimization()}
-          disabled={isOptimizing}
-          className="w-full py-2 px-3 rounded-md bg-[#0F172A] hover:bg-[#1E293B] text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
-        >
-          {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-          {isOptimizing ? 'Optimizing Portfolio...' : 'Recompute Mitigation Portfolio'}
-        </button>
-      </div>
+      {/* Recompute Action */}
+      <button
+        type="button"
+        onClick={() => void onRunOptimization()}
+        disabled={isOptimizing}
+        className="w-full py-2 px-3 rounded-lg bg-[#12345B] hover:bg-[#0F2A4A] text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
+      >
+        {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+        {isOptimizing ? 'Optimizing Portfolio…' : 'Recompute Mitigation Portfolio'}
+      </button>
     </MunicipalPanel>
   );
 });

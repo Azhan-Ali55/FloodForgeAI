@@ -17,12 +17,12 @@ import {
 } from '../components/dashboard/MitigationComparisonPanel';
 import { RiskAlertsPanel } from '../components/dashboard/RiskAlertsPanel';
 import { RiskSummaryPanel } from '../components/dashboard/RiskSummaryPanel';
+import { ForecastHorizonSelector } from '../components/ui/HorizonSelector';
 import { RiskGauge } from '../components/ui/RiskGauge';
 import { AlertTierBadge } from '../components/ui/Primitives';
 import { useFloodForge } from '../context/FloodForgeContext';
 import type {
   BasemapStyle,
-  ForecastHorizon,
   MapLayerVisibility,
   MapRasterLayer,
   SelectedMapFeature,
@@ -273,28 +273,11 @@ export function CommandCenter() {
               <div className="text-[11px] text-[#64748B] font-semibold uppercase tracking-wider">
                 Horizon
               </div>
-              <div
-                role="group"
-                aria-label="Forecast horizon"
-                className="flex sm:flex-col gap-1.5"
-              >
-                {([24, 48, 72] as ForecastHorizon[]).map((h) => (
-                  <button
-                    key={h}
-                    type="button"
-                    aria-pressed={forecastHorizon === h}
-                    onClick={() => setForecastHorizon(h)}
-                    className={cn(
-                      'min-w-[48px] min-h-[34px] px-3 py-1 rounded-lg font-mono text-xs font-semibold transition-all cursor-pointer',
-                      forecastHorizon === h
-                        ? 'bg-[#12345B] text-white shadow-sm'
-                        : 'bg-[#F1F6FB] text-[#475569] hover:text-[#10223D] border border-[#E2E8F0]'
-                    )}
-                  >
-                    {h}h
-                  </button>
-                ))}
-              </div>
+              <ForecastHorizonSelector
+                value={forecastHorizon}
+                onChange={setForecastHorizon}
+                layout="col"
+              />
               <Link
                 to="/monitoring"
                 className="flex items-center gap-1 text-[11px] text-[#0F766E] hover:underline font-medium mt-0.5 whitespace-nowrap"
@@ -464,10 +447,6 @@ export function CommandCenter() {
             isOptStale={isOptStale}
             optError={optError}
             onRunOptimization={runOptimization}
-            mapViewMode={mapViewMode}
-            onMapViewModeChange={setMapViewMode}
-            compareSplitPct={compareSplitPct}
-            onCompareSplitChange={setCompareSplitPct}
           />
         </div>
       </div>

@@ -26,18 +26,19 @@ import {
   YAxis,
 } from 'recharts';
 import { HistoricalHindcastPanel } from '../components/prediction/HistoricalHindcastPanel';
+import { ForecastHorizonSelector } from '../components/ui/HorizonSelector';
 import {
   AlertTierBadge,
   MunicipalPanel,
   PageHeader,
   ScenarioTagBadge,
 } from '../components/ui/Primitives';
+import { Tooltip as UiTooltip } from '../components/ui/Tooltip';
 import { useFloodForge } from '../context/FloodForgeContext';
 import { buildPreparednessActions } from '../engine/monitoringStations';
 import { buildScenarioForOutlookDay } from '../services/forecastService';
 import type {
   AntecedentWetnessLevel,
-  ForecastHorizon,
   ScenarioTag,
 } from '../types/floodforge';
 import { cn } from '../utils/cn';
@@ -95,6 +96,7 @@ export function FloodPrediction() {
   } = useFloodForge();
 
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [sectionTab, setSectionTab] = useState<'forecast' | 'simulator' | 'historical'>('forecast');
 
   const visibleForecast = useMemo(
     () =>
@@ -219,29 +221,69 @@ export function FloodPrediction() {
         }
       />
 
-      {/* Weather Forecast Section */}
+      {/* Consolidated Monsoon Stress Test Active Banner */}
+      {monsoonStressMode && (
+        <div
+          role="status"
+          className="px-4 py-2.5 rounded-xl border border-[#EA580C]/40 bg-[#FFF7ED] flex flex-wrap items-center justify-between gap-2 text-xs text-[#9A3412]"
+        >
+          <span className="font-semibold flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-[#EA580C] flex-shrink-0" />
+            Hypothetical Monsoon Surge Stress Test Active — displayed rainfall &amp; exposure are simulated, not live telemetry.
+          </span>
+          <button
+            type="button"
+            onClick={toggleMonsoonStressMode}
+            className="px-3 py-1 rounded-lg bg-[#EA580C] hover:bg-[#C2410C] text-white font-semibold cursor-pointer transition-colors"
+          >
+            Exit Monsoon Test
+          </button>
+        </div>
+      )}
+
+      {/* Accessible Section Tabs */}
+      <div
+        role="tablist"
+        aria-label="Simulation workspace sections"
+        className="bg-white border border-[#E2E8F0] rounded-xl p-1.5 inline-flex flex-wrap items-center gap-1 shadow-2xs"
+      >
+        {(
+          [
+            { id: 'forecast', label: 'Forecast Analysis' },
+            { id: 'simulator', label: 'Scenario Simulator' },
+            { id: 'historical', label: 'Historical Analysis' },
+          ] as const
+        ).map((tabItem) => (
+          <button
+            key={tabItem.id}
+            role="tab"
+            type="button"
+            aria-selected={sectionTab === tabItem.id}
+            onClick={() => setSectionTab(tabItem.id)}
+            className={cn(
+              'px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer',
+              sectionTab === tabItem.id
+                ? 'bg-[#12345B] text-white shadow-2xs'
+                : 'text-[#475569] hover:text-[#10223D] hover:bg-[#F1F6FB]'
+            )}
+          >
+            {tabItem.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 1. Forecast Analysis */}
+      {sectionTab === 'forecast' && (
+      <>
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <MunicipalPanel
           title="Hourly Rainfall Forecast & Probability"
           className="xl:col-span-8"
           rightSlot={
-            <div className="flex items-center rounded-md bg-[#F1F5F9] border border-[#E2E8F0] p-0.5 text-xs">
-              {([24, 48, 72] as ForecastHorizon[]).map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  onClick={() => setForecastHorizon(h)}
-                  className={cn(
-                    'px-2.5 py-0.5 rounded font-mono font-medium transition-colors cursor-pointer',
-                    forecastHorizon === h
-                      ? 'bg-[#FFFFFF] text-[#0F172A] shadow-2xs border border-[#CBD5E1]'
-                      : 'text-[#64748B] hover:text-[#0F172A] border border-transparent'
-                  )}
-                >
-                  {h}h
-                </button>
-              ))}
-            </div>
+            <ForecastHorizonSelector
+              value={forecastHorizon}
+              onChange={setForecastHorizon}
+            />
           }
         >
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#64748B] mb-2">
@@ -272,15 +314,6 @@ export function FloodPrediction() {
               <strong className="font-mono text-[#10223D]">{weather.peakHourlyMm} mm/h</strong>
             </span>
             <div className="flex items-center gap-2">
-              {monsoonStressMode && (
-                <button
-                  type="button"
-                  onClick={toggleMonsoonStressMode}
-                  className="text-[10px] font-mono px-2 py-0.5 rounded-sm bg-[#EF8735] text-white font-semibold cursor-pointer hover:bg-[#D97222]"
-                >
-                  Exit Monsoon Test
-                </button>
-              )}
               <span
                 className={cn(
                   'text-[10px] font-mono px-2 py-0.5 rounded-sm border',
@@ -410,18 +443,17 @@ export function FloodPrediction() {
             <span className="text-xs font-mono text-[#64748B]">
               {weather.outlook30d.length}d Total: {weather.forecast30dMm} mm
             </span>
-            <button
-              type="button"
-              onClick={toggleMonsoonStressMode}
-              className={cn(
-                'px-2.5 py-1 rounded text-xs font-medium border transition-colors cursor-pointer',
-                monsoonStressMode
-                  ? 'bg-[#EA580C] border-[#EA580C] text-white'
-                  : 'bg-[#F1F6FB] border-[#CBD5E1] text-[#0F172A] hover:bg-[#F1F5F9]'
-              )}
-            >
-              {monsoonStressMode ? 'Exit Monsoon Test' : 'Test 30-Day Monsoon Surge'}
-            </button>
+            {!monsoonStressMode && (
+              <UiTooltip content="Activate a hypothetical extended rainfall stress test.">
+                <button
+                  type="button"
+                  onClick={toggleMonsoonStressMode}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium border bg-[#F1F6FB] border-[#CBD5E1] text-[#10223D] hover:bg-[#E2E8F0]/60 transition-colors cursor-pointer"
+                >
+                  Test 30-Day Monsoon Surge
+                </button>
+              </UiTooltip>
+            )}
           </div>
         }
         bodyClassName="p-3.5 space-y-3"
@@ -495,8 +527,11 @@ export function FloodPrediction() {
           </ResponsiveContainer>
         </div>
       </MunicipalPanel>
+      </>
+      )}
 
-      {/* Cloudburst Scenario Simulator + Prediction Results */}
+      {/* 2. Scenario Simulator */}
+      {sectionTab === 'simulator' && (
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <MunicipalPanel
           title="Cloudburst Scenario Simulator"
@@ -853,8 +888,10 @@ export function FloodPrediction() {
           </div>
         </MunicipalPanel>
       </div>
+      )}
 
-      <HistoricalHindcastPanel />
+      {/* 3. Historical Analysis */}
+      {sectionTab === 'historical' && <HistoricalHindcastPanel />}
     </div>
   );
 }

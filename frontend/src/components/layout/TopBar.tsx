@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useFloodForge } from '../../context/FloodForgeContext';
 import { cn } from '../../utils/cn';
+import { Tooltip } from '../ui/Tooltip';
 
 interface SlimTopBarProps {
   onMobileMenuOpen: () => void;
@@ -239,32 +240,36 @@ export function SlimTopBar({
           className="flex items-center rounded-full bg-white border border-[#E2E8F0] p-0.5 text-[11px] sm:text-xs font-medium flex-shrink-0"
           style={{ boxShadow: '0 1px 4px rgba(16,34,61,0.06)' }}
         >
-          <button
-            type="button"
-            aria-pressed={operationalMode === 'live_ops'}
-            onClick={() => setOperationalMode('live_ops')}
-            className={cn(
-              'px-2.5 sm:px-3 py-1 rounded-full transition-all cursor-pointer whitespace-nowrap',
-              operationalMode === 'live_ops'
-                ? 'bg-[#12345B] text-white font-semibold shadow-sm'
-                : 'text-[#64748B] hover:text-[#10223D]'
-            )}
-          >
-            Live Ops
-          </button>
-          <button
-            type="button"
-            aria-pressed={operationalMode === 'demo_2001'}
-            onClick={() => setOperationalMode('demo_2001')}
-            className={cn(
-              'px-2.5 sm:px-3 py-1 rounded-full transition-all cursor-pointer whitespace-nowrap',
-              operationalMode === 'demo_2001'
-                ? 'bg-[#DC2626] text-white font-semibold shadow-sm'
-                : 'text-[#64748B] hover:text-[#DC2626]'
-            )}
-          >
-            2001 Demo
-          </button>
+          <Tooltip content="Use available current weather data for operational flood-risk screening." side="bottom">
+            <button
+              type="button"
+              aria-pressed={operationalMode === 'live_ops'}
+              onClick={() => setOperationalMode('live_ops')}
+              className={cn(
+                'px-2.5 sm:px-3 py-1 rounded-full transition-all cursor-pointer whitespace-nowrap',
+                operationalMode === 'live_ops'
+                  ? 'bg-[#12345B] text-white font-semibold shadow-sm'
+                  : 'text-[#64748B] hover:text-[#10223D]'
+              )}
+            >
+              Live Ops
+            </button>
+          </Tooltip>
+          <Tooltip content="Replay the historical 2001 cloudburst scenario." side="bottom">
+            <button
+              type="button"
+              aria-pressed={operationalMode === 'demo_2001'}
+              onClick={() => setOperationalMode('demo_2001')}
+              className={cn(
+                'px-2.5 sm:px-3 py-1 rounded-full transition-all cursor-pointer whitespace-nowrap',
+                operationalMode === 'demo_2001'
+                  ? 'bg-[#DC2626] text-white font-semibold shadow-sm'
+                  : 'text-[#64748B] hover:text-[#DC2626]'
+              )}
+            >
+              2001 Demo
+            </button>
+          </Tooltip>
         </div>
 
         {/* Right: Mobile Search toggle + notification bell */}

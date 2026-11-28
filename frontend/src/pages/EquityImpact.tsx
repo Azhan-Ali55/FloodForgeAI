@@ -29,7 +29,7 @@ import { useFloodForge } from '../context/FloodForgeContext';
 import { cn } from '../utils/cn';
 import { formatNumber } from '../utils/formatters';
 
-export function EquityImpact() {
+export function EquityImpact({ embedded = false }: { embedded?: boolean }) {
   const { optResult } = useFloodForge();
 
   const metricsComparison = useMemo(() => {
@@ -94,16 +94,18 @@ export function EquityImpact() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Neighborhood Equity & Impact Assessment"
-        subtitle="Before-and-after exposure comparison and downstream risk-transfer audit across Islamabad & Rawalpindi."
-        rightSlot={
-          <div className="flex items-center gap-2 text-xs font-mono text-[#12345B]">
-            <Scale className="w-4 h-4" />
-            <span>{optResult.zoneEquityRows.length} Basin Zones Audited</span>
-          </div>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title="Neighborhood Equity & Impact Assessment"
+          subtitle="Before-and-after exposure comparison and downstream risk-transfer audit across Islamabad & Rawalpindi."
+          rightSlot={
+            <div className="flex items-center gap-2 text-xs font-mono text-[#12345B]">
+              <Scale className="w-4 h-4" />
+              <span>{optResult.zoneEquityRows.length} Basin Zones Audited</span>
+            </div>
+          }
+        />
+      )}
 
       <EquityStatusBanner
         hasFloodRisk={hasFloodRisk}
